@@ -1,0 +1,3360 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RECON//OS &mdash; Bug Bounty Automation Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@300;400;600;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #060a0f;
+    --bg2: #0b1118;
+    --bg3: #0f1822;
+    --panel: #0d1520;
+    --border: #1a2d42;
+    --border-glow: #00ffe1;
+    --accent: #00ffe1;
+    --accent2: #ff3f6c;
+    --accent3: #f5a623;
+    --accent4: #7b61ff;
+    --text: #c8e0f0;
+    --text-dim: #4a6a82;
+    --text-bright: #e8f8ff;
+    --green: #00ff88;
+    --red: #ff3f6c;
+    --yellow: #f5a623;
+    --purple: #7b61ff;
+    --scan-line: rgba(0,255,225,0.03);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      var(--scan-line) 2px,
+      var(--scan-line) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* Noise texture */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 9998;
+    opacity: 0.4;
+  }
+
+  /* Top bar */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    font-family: 'Orbitron', monospace;
+    font-weight: 900;
+    font-size: 18px;
+    color: var(--accent);
+    letter-spacing: 4px;
+    text-shadow: 0 0 20px rgba(0,255,225,0.5);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .logo-slash {
+    color: var(--accent2);
+    font-size: 22px;
+  }
+
+  .logo-sub {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 2px;
+    display: block;
+    margin-top: 2px;
+  }
+
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+  }
+
+  .status-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-dim);
+  }
+
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse 2s infinite;
+  }
+
+  .status-dot.idle { background: var(--yellow); animation: none; }
+  .status-dot.error { background: var(--red); animation: none; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 6px var(--green); }
+    50% { opacity: 0.4; box-shadow: none; }
+  }
+
+  .time-display {
+    font-family: 'Orbitron', monospace;
+    font-size: 12px;
+    color: var(--accent);
+    letter-spacing: 2px;
+  }
+
+  /* Layout */
+  .layout {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    grid-template-rows: auto 1fr;
+    min-height: calc(100vh - 53px);
+  }
+
+  /* Sidebar */
+  .sidebar {
+    grid-row: 1 / 3;
+    border-right: 1px solid var(--border);
+    background: var(--bg2);
+    padding: 20px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .sidebar-section-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 3px;
+    padding: 8px 20px 4px;
+    text-transform: uppercase;
+  }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 20px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-left: 2px solid transparent;
+    position: relative;
+  }
+
+  .nav-item:hover, .nav-item.active {
+    background: rgba(0,255,225,0.05);
+    border-left-color: var(--accent);
+    color: var(--text-bright);
+  }
+
+  .nav-item.active .nav-label { color: var(--accent); }
+
+  .nav-icon {
+    font-size: 16px;
+    width: 20px;
+    text-align: center;
+  }
+
+  .nav-label {
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  .nav-badge {
+    margin-left: auto;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 2px;
+    background: rgba(0,255,225,0.1);
+    color: var(--accent);
+    border: 1px solid rgba(0,255,225,0.2);
+  }
+
+  .nav-badge.warn { background: rgba(245,166,35,0.1); color: var(--yellow); border-color: rgba(245,166,35,0.2); }
+  .nav-badge.danger { background: rgba(255,63,108,0.1); color: var(--red); border-color: rgba(255,63,108,0.2); }
+
+  .sidebar-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 12px 20px;
+  }
+
+  /* Target input area */
+  .target-panel {
+    padding: 16px 20px;
+    margin: 8px 12px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .target-panel::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  }
+
+  .target-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--accent);
+    letter-spacing: 2px;
+    margin-bottom: 8px;
+  }
+
+  .target-input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text-bright);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    padding: 8px 10px;
+    outline: none;
+    border-radius: 2px;
+    transition: border-color 0.2s;
+    letter-spacing: 1px;
+  }
+
+  .target-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 12px rgba(0,255,225,0.1);
+  }
+
+  .target-input::placeholder { color: var(--text-dim); }
+
+  .btn-launch {
+    width: 100%;
+    margin-top: 10px;
+    padding: 10px;
+    background: linear-gradient(135deg, rgba(0,255,225,0.15), rgba(0,255,225,0.05));
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-family: 'Orbitron', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+    border-radius: 2px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn-launch::before {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%;
+    width: 100%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(0,255,225,0.1), transparent);
+    transition: left 0.4s;
+  }
+
+  .btn-launch:hover::before { left: 100%; }
+
+  .btn-launch:hover {
+    background: rgba(0,255,225,0.2);
+    box-shadow: 0 0 20px rgba(0,255,225,0.2);
+    text-shadow: 0 0 10px var(--accent);
+  }
+
+  .btn-launch.running {
+    border-color: var(--yellow);
+    color: var(--yellow);
+    background: rgba(245,166,35,0.1);
+    animation: btn-pulse 1.5s infinite;
+  }
+
+  @keyframes btn-pulse {
+    0%, 100% { box-shadow: 0 0 8px rgba(245,166,35,0.3); }
+    50% { box-shadow: 0 0 20px rgba(245,166,35,0.6); }
+  }
+
+  /* Module toggles */
+  .module-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 0;
+    font-size: 12px;
+    color: var(--text);
+  }
+
+  .module-toggle-label { display: flex; align-items: center; gap: 8px; }
+
+  .toggle {
+    width: 28px;
+    height: 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.2s;
+  }
+
+  .toggle::after {
+    content: '';
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    transition: all 0.2s;
+  }
+
+  .toggle.on {
+    background: rgba(0,255,225,0.1);
+    border-color: var(--accent);
+  }
+
+  .toggle.on::after {
+    left: 16px;
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent);
+  }
+
+  /* Main content */
+  .main-header {
+    padding: 20px 28px 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+  }
+
+  .page-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 0;
+  }
+
+  .tab {
+    padding: 10px 20px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* Content */
+  .content {
+    padding: 24px 28px;
+    overflow-y: auto;
+    max-height: calc(100vh - 130px);
+  }
+
+  /* Stats row */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .stat-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 16px;
+    position: relative;
+    overflow: hidden;
+    border-radius: 3px;
+    transition: border-color 0.3s;
+  }
+
+  .stat-card:hover { border-color: rgba(0,255,225,0.3); }
+
+  .stat-card::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+  }
+
+  .stat-card.c1::after { background: linear-gradient(90deg, var(--accent), transparent); }
+  .stat-card.c2::after { background: linear-gradient(90deg, var(--accent2), transparent); }
+  .stat-card.c3::after { background: linear-gradient(90deg, var(--accent3), transparent); }
+  .stat-card.c4::after { background: linear-gradient(90deg, var(--accent4), transparent); }
+
+  .stat-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .stat-value {
+    font-family: 'Orbitron', monospace;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    line-height: 1;
+  }
+
+  .stat-value.c1 { color: var(--accent); }
+  .stat-value.c2 { color: var(--accent2); }
+  .stat-value.c3 { color: var(--accent3); }
+  .stat-value.c4 { color: var(--accent4); }
+
+  .stat-sub {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+
+  /* Grid panels */
+  .panels-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(255,255,255,0.02);
+  }
+
+  .panel-title {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .panel-icon { font-size: 14px; }
+
+  .panel-action {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--accent);
+    cursor: pointer;
+    letter-spacing: 1px;
+  }
+
+  .panel-action:hover { text-decoration: underline; }
+
+  .panel-body { padding: 12px 16px; }
+
+  /* Terminal / log */
+  .terminal {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 12px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    height: 200px;
+    overflow-y: auto;
+    line-height: 1.8;
+  }
+
+  .terminal::-webkit-scrollbar { width: 4px; }
+  .terminal::-webkit-scrollbar-track { background: var(--bg2); }
+  .terminal::-webkit-scrollbar-thumb { background: var(--border); }
+
+  .log-line { display: flex; gap: 10px; }
+  .log-time { color: var(--text-dim); min-width: 65px; }
+  .log-module { min-width: 60px; }
+  .log-module.subdomain { color: var(--accent); }
+  .log-module.dns { color: var(--green); }
+  .log-module.port { color: var(--accent2); }
+  .log-module.fingerprint { color: var(--purple); }
+  .log-module.js { color: var(--accent3); }
+  .log-module.url_intel { color: var(--yellow); }
+  .log-module.dir { color: var(--accent4); }
+  .log-module.system { color: var(--text-dim); }
+  .log-msg { color: var(--text); }
+  .log-msg.success { color: var(--green); }
+  .log-msg.warn { color: var(--yellow); }
+  .log-msg.error { color: var(--red); }
+  .log-msg.dim { color: var(--text-dim); }
+
+  /* Subdomain list */
+  .subdomain-list {
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .subdomain-list::-webkit-scrollbar { width: 4px; }
+  .subdomain-list::-webkit-scrollbar-track { background: var(--bg2); }
+  .subdomain-list::-webkit-scrollbar-thumb { background: var(--border); }
+
+  .subdomain-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(26,45,66,0.5);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    animation: fadeIn 0.3s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateX(-8px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  .subdomain-name { color: var(--text); }
+  .subdomain-ip { color: var(--text-dim); font-size: 10px; }
+  .subdomain-status { font-size: 10px; padding: 2px 6px; border-radius: 2px; }
+  .subdomain-status.live { background: rgba(0,255,136,0.1); color: var(--green); border: 1px solid rgba(0,255,136,0.2); }
+  .subdomain-status.dead { background: rgba(255,63,108,0.1); color: var(--red); border: 1px solid rgba(255,63,108,0.2); }
+  .subdomain-status.unknown { background: rgba(74,106,130,0.1); color: var(--text-dim); border: 1px solid var(--border); }
+
+  /* Port grid */
+  .port-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 6px;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .port-item {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    padding: 6px 8px;
+    text-align: center;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    border-radius: 2px;
+    animation: fadeIn 0.3s ease;
+  }
+
+  .port-num { color: var(--accent2); font-size: 13px; font-weight: bold; }
+  .port-service { color: var(--text-dim); font-size: 9px; letter-spacing: 1px; margin-top: 2px; }
+  .port-item.critical { border-color: rgba(255,63,108,0.4); background: rgba(255,63,108,0.05); }
+  .port-item.interesting { border-color: rgba(245,166,35,0.4); background: rgba(245,166,35,0.05); }
+
+  /* JS findings */
+  .finding-item {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent3);
+    padding: 8px 12px;
+    margin-bottom: 6px;
+    border-radius: 0 2px 2px 0;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    animation: fadeIn 0.3s ease;
+  }
+
+  .finding-type { color: var(--accent3); font-size: 10px; letter-spacing: 1px; }
+  .finding-url { color: var(--text); margin: 3px 0; word-break: break-all; }
+  .finding-detail { color: var(--text-dim); font-size: 10px; }
+  .finding-item.high { border-left-color: var(--red); }
+  .finding-item.high .finding-type { color: var(--red); }
+  .finding-item.low { border-left-color: var(--text-dim); }
+  .finding-item.low .finding-type { color: var(--text-dim); }
+
+  /* Directory results */
+  .dir-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(26,45,66,0.5);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    animation: fadeIn 0.3s ease;
+  }
+
+  .dir-code {
+    font-size: 12px;
+    font-weight: bold;
+    min-width: 36px;
+  }
+
+  .dir-code.s200 { color: var(--green); }
+  .dir-code.s301 { color: var(--yellow); }
+  .dir-code.s403 { color: var(--accent2); }
+  .dir-code.s404 { color: var(--text-dim); }
+  .dir-code.s500 { color: var(--red); }
+
+  .dir-path { color: var(--text); flex: 1; }
+  .dir-size { color: var(--text-dim); font-size: 10px; min-width: 50px; text-align: right; }
+
+  /* Progress bars */
+  .progress-wrap {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    height: 4px;
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 8px;
+  }
+
+  .progress-bar {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.5s ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .progress-bar::after {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%;
+    width: 60%;
+    height: 100%;
+    background: rgba(255,255,255,0.3);
+    animation: shimmer 1.5s infinite;
+  }
+
+  @keyframes shimmer {
+    to { left: 200%; }
+  }
+
+  .progress-bar.accent { background: linear-gradient(90deg, var(--accent), rgba(0,255,225,0.5)); }
+  .progress-bar.accent2 { background: linear-gradient(90deg, var(--accent2), rgba(255,63,108,0.5)); }
+  .progress-bar.accent3 { background: linear-gradient(90deg, var(--accent3), rgba(245,166,35,0.5)); }
+  .progress-bar.accent4 { background: linear-gradient(90deg, var(--accent4), rgba(123,97,255,0.5)); }
+
+  .progress-label {
+    display: flex;
+    justify-content: space-between;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+
+  /* Module status */
+  .module-status-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(26,45,66,0.5);
+  }
+
+  .module-status-name {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .module-status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+  }
+
+  .dot-running { background: var(--yellow); animation: pulse-yellow 1s infinite; }
+  .dot-done { background: var(--green); }
+  .dot-waiting { background: var(--text-dim); }
+  .dot-error { background: var(--red); }
+
+  @keyframes pulse-yellow {
+    0%, 100% { opacity: 1; box-shadow: 0 0 4px var(--yellow); }
+    50% { opacity: 0.4; }
+  }
+
+  .module-status-pct {
+    font-family: 'Orbitron', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  /* Full-width panel */
+  .panel-full {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+
+  /* Cursor blink */
+  .cursor { animation: blink 1s step-start infinite; color: var(--accent); }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* Tab content */
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* Findings severity */
+  .severity-badge {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 2px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  .sev-critical { background: rgba(255,63,108,0.15); color: var(--red); border: 1px solid rgba(255,63,108,0.3); }
+  .sev-high { background: rgba(245,166,35,0.15); color: var(--yellow); border: 1px solid rgba(245,166,35,0.3); }
+  .sev-medium { background: rgba(123,97,255,0.15); color: var(--purple); border: 1px solid rgba(123,97,255,0.3); }
+  .sev-low { background: rgba(74,106,130,0.15); color: var(--text-dim); border: 1px solid var(--border); }
+  .sev-info { background: rgba(0,255,225,0.1); color: var(--accent); border: 1px solid rgba(0,255,225,0.2); }
+
+  /* Alert banner */
+  .alert-banner {
+    background: rgba(255,63,108,0.08);
+    border: 1px solid rgba(255,63,108,0.25);
+    border-left: 3px solid var(--red);
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    border-radius: 2px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: var(--red);
+    animation: fadeIn 0.3s ease;
+  }
+
+  .alert-icon { font-size: 16px; }
+
+  /* Empty state */
+  .empty-state {
+    text-align: center;
+    padding: 30px;
+    color: var(--text-dim);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 1px;
+  }
+
+  /* Tooltip-like helper */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 20px;
+    background: rgba(0,255,225,0.07);
+    border: 1px solid rgba(0,255,225,0.15);
+    color: var(--accent);
+  }
+
+  .evidence-list {
+    max-height: 260px;
+    overflow-y: auto;
+  }
+
+  .evidence-item {
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(26,45,66,0.5);
+    font-family: 'Share Tech Mono', monospace;
+    animation: fadeIn 0.3s ease;
+  }
+
+  .evidence-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 4px;
+  }
+
+  .evidence-module {
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  .evidence-module.subdomain { color: var(--accent); }
+  .evidence-module.dns { color: var(--green); }
+  .evidence-module.port { color: var(--accent2); }
+  .evidence-module.fingerprint { color: var(--purple); }
+  .evidence-module.js { color: var(--accent3); }
+  .evidence-module.url_intel { color: var(--yellow); }
+  .evidence-module.dir { color: var(--accent4); }
+
+  .evidence-source {
+    font-size: 10px;
+    color: var(--text-dim);
+    text-align: right;
+  }
+
+  .evidence-main {
+    color: var(--text-bright);
+    font-size: 11px;
+    margin-bottom: 3px;
+    word-break: break-word;
+  }
+
+  .evidence-detail {
+    color: var(--text-dim);
+    font-size: 10px;
+    word-break: break-word;
+    line-height: 1.5;
+  }
+
+  .mode-select {
+    cursor: pointer;
+    text-transform: uppercase;
+  }
+
+  .mode-select option {
+    background: var(--bg2);
+    color: var(--text-bright);
+  }
+
+  .history-list {
+    max-height: calc(100vh - 240px);
+    overflow-y: auto;
+  }
+
+  .history-item {
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(26,45,66,0.5);
+    font-family: 'Share Tech Mono', monospace;
+    animation: fadeIn 0.3s ease;
+  }
+
+  .history-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+
+  .history-target {
+    color: var(--text-bright);
+    font-size: 12px;
+    word-break: break-word;
+  }
+
+  .history-mode {
+    font-size: 10px;
+    color: var(--accent);
+    letter-spacing: 1px;
+  }
+
+  .history-meta {
+    color: var(--text-dim);
+    font-size: 10px;
+    line-height: 1.6;
+    margin-bottom: 8px;
+  }
+
+  .history-summary {
+    color: var(--text);
+    font-size: 10px;
+    line-height: 1.6;
+    margin-bottom: 8px;
+  }
+
+  .history-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .history-btn {
+    background: rgba(0,255,225,0.07);
+    border: 1px solid rgba(0,255,225,0.18);
+    color: var(--accent);
+    padding: 6px 10px;
+    border-radius: 2px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 1px;
+    cursor: pointer;
+  }
+
+  .history-btn:hover {
+    background: rgba(0,255,225,0.14);
+  }
+
+  .history-btn.active {
+    background: rgba(0,255,225,0.18);
+    box-shadow: 0 0 10px rgba(0,255,225,0.12);
+  }
+
+  .history-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .triage-filters {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .triage-list {
+    display: grid;
+    gap: 12px;
+  }
+
+  .triage-item {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 12px;
+  }
+
+  .triage-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+
+  .triage-title {
+    color: var(--text-bright);
+    font-size: 12px;
+    word-break: break-word;
+  }
+
+  .triage-meta {
+    color: var(--text-dim);
+    font-size: 10px;
+    line-height: 1.6;
+    margin-bottom: 10px;
+    word-break: break-word;
+  }
+
+  .triage-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .triage-status-select {
+    min-width: 140px;
+  }
+
+  .copy-btn {
+    background: rgba(123,97,255,0.1);
+    border: 1px solid rgba(123,97,255,0.22);
+    color: var(--accent4);
+    padding: 5px 9px;
+    border-radius: 2px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 1px;
+    cursor: pointer;
+  }
+
+  .copy-btn:hover {
+    background: rgba(123,97,255,0.16);
+  }
+
+  .history-compare-toolbar {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 12px;
+    margin-bottom: 16px;
+    align-items: stretch;
+  }
+
+  .compare-slot {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 10px 12px;
+    min-height: 88px;
+  }
+
+  .compare-slot-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+
+  .compare-slot-value {
+    color: var(--text-bright);
+    font-size: 12px;
+    word-break: break-word;
+    margin-bottom: 6px;
+  }
+
+  .compare-slot-meta {
+    font-size: 10px;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+
+  .compare-toolbar-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    justify-content: center;
+  }
+
+  .compare-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .compare-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 12px;
+  }
+
+  .compare-card-tag {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+
+  .compare-card-title {
+    color: var(--text-bright);
+    font-size: 13px;
+    margin-bottom: 6px;
+    word-break: break-word;
+  }
+
+  .compare-card-meta {
+    color: var(--text-dim);
+    font-size: 10px;
+    line-height: 1.6;
+  }
+
+  .compare-delta-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .compare-delta-item {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 10px 12px;
+  }
+
+  .compare-delta-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+
+  .compare-delta-values {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .compare-delta-main {
+    color: var(--text-bright);
+    font-size: 12px;
+  }
+
+  .compare-delta-change {
+    font-family: 'Orbitron', monospace;
+    font-size: 12px;
+  }
+
+  .delta-pos { color: var(--green); }
+  .delta-neg { color: var(--red); }
+  .delta-zero { color: var(--text-dim); }
+
+  .compare-modules {
+    display: grid;
+    gap: 16px;
+  }
+
+  .compare-module {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 12px;
+  }
+
+  .compare-module-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+
+  .compare-module-title {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--text-bright);
+  }
+
+  .compare-module-meta {
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+
+  .compare-module-columns {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+
+  .compare-change-group {
+    border: 1px solid rgba(26,45,66,0.65);
+    border-radius: 3px;
+    padding: 10px;
+    min-height: 120px;
+  }
+
+  .compare-change-title {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+
+  .compare-change-list {
+    display: grid;
+    gap: 8px;
+  }
+
+  .compare-entry {
+    border-left: 2px solid var(--border);
+    padding-left: 8px;
+  }
+
+  .compare-entry.added { border-left-color: var(--green); }
+  .compare-entry.removed { border-left-color: var(--red); }
+  .compare-entry.changed { border-left-color: var(--yellow); }
+
+  .compare-entry-title {
+    color: var(--text-bright);
+    font-size: 11px;
+    margin-bottom: 3px;
+    word-break: break-word;
+  }
+
+  .compare-entry-summary {
+    color: var(--text);
+    font-size: 10px;
+    line-height: 1.5;
+    word-break: break-word;
+  }
+
+  .compare-entry-source {
+    color: var(--text-dim);
+    font-size: 9px;
+    line-height: 1.5;
+    word-break: break-word;
+  }
+
+  .compare-entry-transition {
+    display: grid;
+    gap: 6px;
+  }
+
+  .compare-entry-transition-label {
+    color: var(--text-dim);
+    font-size: 9px;
+    letter-spacing: 1px;
+  }
+
+  .compare-entry-transition-value {
+    color: var(--text);
+    font-size: 10px;
+    line-height: 1.5;
+    word-break: break-word;
+  }
+
+  @media (max-width: 1100px) {
+    .triage-filters,
+    .history-compare-toolbar,
+    .compare-grid,
+    .compare-module-columns {
+      grid-template-columns: 1fr;
+    }
+
+    .compare-toolbar-actions {
+      flex-direction: row;
+      flex-wrap: wrap;
+    }
+  }
+
+  /* Highlight in terminal on new entry */
+  .log-line.new { animation: highlightLine 1s ease; }
+  @keyframes highlightLine {
+    from { background: rgba(0,255,225,0.07); }
+    to { background: transparent; }
+  }
+</style>
+</head>
+<body>
+  <!-- Top Bar -->
+  <div class="topbar">
+    <div class="logo">
+      <div>
+        RECON<span class="logo-slash">//</span>OS
+        <span class="logo-sub">BUG BOUNTY AUTOMATION PLATFORM v2.4.1</span>
+      </div>
+    </div>
+    <div class="status-bar">
+      <div class="status-item">
+        <div class="status-dot" id="sys-dot"></div>
+        <span id="sys-status">SYSTEM READY</span>
+      </div>
+      <div class="status-item">
+        <span>SESSION:</span>
+        <span style="color:var(--accent)" id="session-id">RCN-7F2A9</span>
+      </div>
+      <div class="time-display" id="clock">--:--:--</div>
+    </div>
+  </div>
+
+  <div class="layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <!-- Target Config -->
+      <div class="target-panel">
+      <div class="target-label">// TARGET</div>
+      <input class="target-input" type="text" id="target-input" placeholder="example.com" value="">
+      <div style="margin-top:12px;">
+        <div class="target-label" style="margin-bottom:6px;">// SCAN PROFILE</div>
+        <select class="target-input mode-select" id="scan-mode-select">
+          <option value="fast">FAST // QUICK TRIAGE</option>
+          <option value="balanced" selected>BALANCED // DEFAULT</option>
+          <option value="deep">DEEP // MAX COVERAGE</option>
+        </select>
+      </div>
+      <div style="margin-top:12px;">
+        <div class="target-label" style="margin-bottom:6px;">// MODULES</div>
+          <div class="module-toggle">
+            <div class="module-toggle-label">
+              <span style="color:var(--accent)">&#9672;</span>
+              <span>Subdomain Enum</span>
+            </div>
+            <div class="toggle on" data-module="subdomain" onclick="toggleModule(this)"></div>
+          </div>
+          <div class="module-toggle">
+            <div class="module-toggle-label">
+              <span style="color:var(--accent2)">&#9672;</span>
+              <span>Port Scanner</span>
+            </div>
+            <div class="toggle on" data-module="port" onclick="toggleModule(this)"></div>
+          </div>
+          <div class="module-toggle">
+            <div class="module-toggle-label">
+              <span style="color:var(--accent3)">&#9672;</span>
+              <span>JS Analysis</span>
+            </div>
+            <div class="toggle on" data-module="js" onclick="toggleModule(this)"></div>
+          </div>
+          <div class="module-toggle">
+            <div class="module-toggle-label">
+              <span style="color:var(--accent4)">&#9672;</span>
+              <span>Dir Fuzzing</span>
+            </div>
+            <div class="toggle on" data-module="dir" onclick="toggleModule(this)"></div>
+          </div>
+        </div>
+        <button class="btn-launch" id="launch-btn" onclick="launchScan()">&#9654; LAUNCH RECON</button>
+      </div>
+
+      <div class="sidebar-divider"></div>
+      <div class="sidebar-section-label">// NAVIGATION</div>
+
+      <div class="nav-item active" onclick="switchTab('overview', this)">
+        <div class="nav-icon">&#8865;</div>
+        <div class="nav-label">Overview</div>
+      </div>
+      <div class="nav-item" onclick="switchTab('subdomains', this)">
+        <div class="nav-icon">&#9673;</div>
+        <div class="nav-label">Subdomains</div>
+        <div class="nav-badge" id="nav-sub-badge">0</div>
+      </div>
+      <div class="nav-item" onclick="switchTab('ports', this)">
+        <div class="nav-icon">&#8862;</div>
+        <div class="nav-label">Ports</div>
+        <div class="nav-badge warn" id="nav-port-badge">0</div>
+      </div>
+      <div class="nav-item" onclick="switchTab('js', this)">
+        <div class="nav-icon">&#9678;</div>
+        <div class="nav-label">JS Analysis</div>
+        <div class="nav-badge danger" id="nav-js-badge">0</div>
+      </div>
+    <div class="nav-item" onclick="switchTab('dirs', this)">
+      <div class="nav-icon">&#8863;</div>
+      <div class="nav-label">Dir Fuzzing</div>
+      <div class="nav-badge" id="nav-dir-badge">0</div>
+    </div>
+    <div class="nav-item" onclick="switchTab('triage', this)">
+      <div class="nav-icon">T</div>
+      <div class="nav-label">Triage</div>
+      <div class="nav-badge warn" id="nav-triage-badge">0</div>
+    </div>
+    <div class="nav-item" onclick="switchTab('history', this)">
+      <div class="nav-icon">&#9004;</div>
+      <div class="nav-label">History</div>
+      <div class="nav-badge" id="nav-history-badge">0</div>
+    </div>
+
+      <div class="sidebar-divider"></div>
+      <div class="sidebar-section-label">// TOOLS</div>
+      <div class="nav-item" onclick="exportReport()">
+        <div class="nav-icon">&#8659;</div>
+        <div class="nav-label">Export Report</div>
+      </div>
+      <div class="nav-item" onclick="clearSession()">
+        <div class="nav-icon">&#8856;</div>
+        <div class="nav-label">Clear Session</div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <div style="display:flex;flex-direction:column;">
+      <div class="main-header">
+        <div class="page-title">// RECONNAISSANCE DASHBOARD</div>
+        <div class="tabs">
+        <div class="tab active" data-tab="overview">OVERVIEW</div>
+        <div class="tab" data-tab="subdomains">SUBDOMAINS</div>
+        <div class="tab" data-tab="ports">PORTS</div>
+        <div class="tab" data-tab="js">JS ANALYSIS</div>
+        <div class="tab" data-tab="dirs">DIR FUZZING</div>
+        <div class="tab" data-tab="triage">TRIAGE</div>
+        <div class="tab" data-tab="history">HISTORY</div>
+      </div>
+      </div>
+
+      <div class="content">
+
+        <!-- OVERVIEW TAB -->
+        <div class="tab-content active" id="tab-overview">
+          <!-- Alert -->
+          <div class="alert-banner" id="alert-banner" style="display:none;">
+            <span class="alert-icon">&#9888;</span>
+            <span id="alert-text"></span>
+          </div>
+
+          <!-- Stats -->
+          <div class="stats-row">
+            <div class="stat-card c1">
+              <div class="stat-label">Subdomains</div>
+              <div class="stat-value c1" id="stat-sub">0</div>
+              <div class="stat-sub" id="stat-sub-live">0 live</div>
+            </div>
+            <div class="stat-card c2">
+              <div class="stat-label">Open Ports</div>
+              <div class="stat-value c2" id="stat-ports">0</div>
+              <div class="stat-sub" id="stat-ports-crit">0 critical</div>
+            </div>
+            <div class="stat-card c3">
+              <div class="stat-label">JS Findings</div>
+              <div class="stat-value c3" id="stat-js">0</div>
+              <div class="stat-sub" id="stat-js-high">0 high severity</div>
+            </div>
+            <div class="stat-card c4">
+              <div class="stat-label">Endpoints</div>
+              <div class="stat-value c4" id="stat-dirs">0</div>
+              <div class="stat-sub" id="stat-dirs-200">0 responding 200</div>
+            </div>
+          </div>
+
+          <!-- Module progress + Terminal -->
+          <div class="panels-grid">
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title"><span class="panel-icon">&#8865;</span> Module Progress</div>
+                <div class="panel-action" id="scan-time-label">IDLE</div>
+              </div>
+              <div class="panel-body">
+                <div id="module-progress-list">
+                  <div class="module-status-row">
+                    <div class="module-status-name">
+                      <div class="module-status-dot dot-waiting" id="dot-subdomain"></div>
+                      <span style="color:var(--accent)">SUBDOMAIN ENUM</span>
+                    </div>
+                    <div class="module-status-pct" id="pct-subdomain">&mdash;</div>
+                  </div>
+                  <div class="progress-wrap"><div class="progress-bar accent" id="bar-subdomain" style="width:0%"></div></div>
+
+                  <div class="module-status-row" style="margin-top:10px;">
+                    <div class="module-status-name">
+                      <div class="module-status-dot dot-waiting" id="dot-port"></div>
+                      <span style="color:var(--accent2)">PORT SCANNER</span>
+                    </div>
+                    <div class="module-status-pct" id="pct-port">&mdash;</div>
+                  </div>
+                  <div class="progress-wrap"><div class="progress-bar accent2" id="bar-port" style="width:0%"></div></div>
+
+                  <div class="module-status-row" style="margin-top:10px;">
+                    <div class="module-status-name">
+                      <div class="module-status-dot dot-waiting" id="dot-js"></div>
+                      <span style="color:var(--accent3)">JS ANALYSIS</span>
+                    </div>
+                    <div class="module-status-pct" id="pct-js">&mdash;</div>
+                  </div>
+                  <div class="progress-wrap"><div class="progress-bar accent3" id="bar-js" style="width:0%"></div></div>
+
+                  <div class="module-status-row" style="margin-top:10px;">
+                    <div class="module-status-name">
+                      <div class="module-status-dot dot-waiting" id="dot-dir"></div>
+                      <span style="color:var(--accent4)">DIR FUZZING</span>
+                    </div>
+                    <div class="module-status-pct" id="pct-dir">&mdash;</div>
+                  </div>
+                  <div class="progress-wrap"><div class="progress-bar accent4" id="bar-dir" style="width:0%"></div></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title"><span class="panel-icon">&#8865;</span> Live Console</div>
+                <div class="panel-action" onclick="clearTerminal()">CLEAR</div>
+              </div>
+              <div class="panel-body" style="padding:8px;">
+                <div class="terminal" id="terminal">
+                  <div class="log-line"><span class="log-time">00:00:00</span><span class="log-module system">SYS</span><span class="log-msg dim">RECON//OS initialized. Enter target and launch scan.</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live preview panels -->
+          <div class="panels-grid">
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title"><span class="panel-icon" style="color:var(--accent)">&#9673;</span> Recent Subdomains</div>
+                <div class="panel-action" onclick="switchTab('subdomains', null)">VIEW ALL &rarr;</div>
+              </div>
+              <div class="panel-body">
+                <div class="subdomain-list" id="overview-subdomain-list">
+                  <div class="empty-state">No data &mdash; launch scan</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title"><span class="panel-icon" style="color:var(--accent3)">&#9678;</span> JS Findings</div>
+                <div class="panel-action" onclick="switchTab('js', null)">VIEW ALL &rarr;</div>
+              </div>
+              <div class="panel-body">
+                <div id="overview-js-list">
+                  <div class="empty-state">No data &mdash; launch scan</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel-full">
+            <div class="panel-header">
+              <div class="panel-title"><span class="panel-icon">[]</span> Raw Evidence</div>
+              <span class="chip">Latest tool output trail</span>
+            </div>
+            <div class="panel-body">
+              <div class="evidence-list" id="evidence-list">
+                <div class="empty-state">No evidence yet &mdash; launch scan</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel-full">
+            <div class="panel-header">
+              <div class="panel-title"><span class="panel-icon" style="color:var(--accent3)">KEY</span> Exposed Keys</div>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <span class="chip" id="key-count-chip">0 candidates</span>
+                <span class="chip">Values redacted</span>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div id="exposed-keys-list">
+                <div class="empty-state">No exposed key candidates yet</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SUBDOMAINS TAB -->
+        <div class="tab-content" id="tab-subdomains">
+          <div class="panel-full">
+            <div class="panel-header">
+              <div class="panel-title"><span class="panel-icon" style="color:var(--accent)">&#9673;</span> Subdomain Enumeration Results</div>
+              <div style="display:flex;gap:12px;align-items:center;">
+                <span class="chip" id="sub-count-chip">0 found</span>
+                <div class="panel-action">EXPORT</div>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div id="full-subdomain-list">
+                <div class="empty-state">No subdomains discovered yet. Launch a scan to begin.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PORTS TAB -->
+        <div class="tab-content" id="tab-ports">
+          <div class="panel-full">
+            <div class="panel-header">
+              <div class="panel-title"><span class="panel-icon" style="color:var(--accent2)">&#8862;</span> Port Scan Results</div>
+              <span class="chip" id="port-count-chip">0 open</span>
+            </div>
+            <div class="panel-body">
+              <div id="full-port-list">
+                <div class="empty-state">No open ports discovered yet. Launch a scan to begin.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- JS TAB -->
+        <div class="tab-content" id="tab-js">
+          <div class="panel-full">
+            <div class="panel-header">
+              <div class="panel-title"><span class="panel-icon" style="color:var(--accent3)">&#9678;</span> JavaScript Analysis</div>
+              <span class="chip" id="js-count-chip">0 findings</span>
+            </div>
+            <div class="panel-body">
+              <div id="full-js-list">
+                <div class="empty-state">No JS findings yet. Launch a scan to begin.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- DIRS TAB -->
+      <div class="tab-content" id="tab-dirs">
+        <div class="panel-full">
+          <div class="panel-header">
+            <div class="panel-title"><span class="panel-icon" style="color:var(--accent4)">&#8863;</span> Directory Fuzzing Results</div>
+            <span class="chip" id="dir-count-chip">0 paths</span>
+            </div>
+            <div class="panel-body">
+              <div id="full-dir-list">
+                <div class="empty-state">No directories found yet. Launch a scan to begin.</div>
+              </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-history">
+        <div class="panel-full">
+          <div class="panel-header">
+            <div class="panel-title"><span class="panel-icon">&#9004;</span> Saved Scan History</div>
+            <div style="display:flex;gap:12px;align-items:center;">
+              <span class="chip" id="history-count-chip">0 saved</span>
+              <div class="panel-action" onclick="loadHistory()">REFRESH</div>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="history-compare-toolbar" id="history-compare-toolbar"></div>
+            <div class="history-list" id="history-list">
+              <div class="empty-state">No saved scans yet. Complete a scan to build history.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-full">
+          <div class="panel-header">
+            <div class="panel-title"><span class="panel-icon">&#8644;</span> Scan Diff</div>
+            <div style="display:flex;gap:12px;align-items:center;">
+              <span class="chip" id="compare-status-chip">Select 2 scans</span>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div id="compare-panel">
+              <div class="empty-state">Select two saved scans and run compare to view the diff.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-triage">
+        <div class="panel-full">
+          <div class="panel-header">
+            <div class="panel-title"><span class="panel-icon">T</span> Findings Triage</div>
+            <div style="display:flex;gap:12px;align-items:center;">
+              <span class="chip" id="triage-count-chip">0 findings</span>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="triage-filters">
+              <select class="target-input mode-select" id="triage-module-filter">
+                <option value="all">ALL MODULES</option>
+                <option value="subdomain">SUBDOMAIN</option>
+                <option value="dns">DNS</option>
+                <option value="port">PORT</option>
+                <option value="fingerprint">FINGERPRINT</option>
+                <option value="js">JS</option>
+                <option value="url_intel">URL INTEL</option>
+                <option value="dir">DIRECTORY</option>
+              </select>
+              <select class="target-input mode-select" id="triage-severity-filter">
+                <option value="all">ALL SEVERITIES</option>
+                <option value="critical">CRITICAL</option>
+                <option value="high">HIGH</option>
+                <option value="medium">MEDIUM</option>
+                <option value="low">LOW</option>
+                <option value="info">INFO</option>
+              </select>
+              <select class="target-input mode-select" id="triage-status-filter">
+                <option value="all">ALL TRIAGE STATES</option>
+                <option value="new">NEW</option>
+                <option value="interesting">INTERESTING</option>
+                <option value="validated">VALIDATED</option>
+                <option value="false_positive">FALSE POSITIVE</option>
+              </select>
+            </div>
+            <div class="triage-list" id="triage-list">
+              <div class="empty-state">No findings available for triage yet. Complete a scan first.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+  <script>
+    // Clock
+    function updateClock() {
+      const now = new Date();
+      document.getElementById('clock').textContent =
+        [now.getHours(), now.getMinutes(), now.getSeconds()]
+          .map(n => String(n).padStart(2, '0')).join(':');
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // State
+    const state = {
+      subdomains: [], dnsRecords: [], ports: [], fingerprints: [], jsFindings: [], urlIntel: [], dirs: [], evidence: [], logs: [],
+      history: [],
+      compare: { leftId: null, rightId: null, data: null, loading: false },
+      triageStatuses: {},
+      triageFilters: { module: 'all', severity: 'all', status: 'all' },
+      abortController: null, abortReason: null,
+      running: false, scanStart: null, elapsed: 0,
+      currentScanId: null,
+      scanMode: 'balanced',
+      modules: { subdomain: true, port: true, js: true, dir: true, dns: true, fingerprint: true, url_intel: true },
+      moduleStats: { js: { analyzed: 0 } },
+      activeTab: 'overview'
+    };
+    const MAX_TERMINAL_LINES = 250;
+    const MAX_LOG_ENTRIES = 500;
+    const MAX_RENDER_ITEMS = 250;
+
+    function createPendingRenderState() {
+      return {
+        subdomains: false,
+        ports: false,
+        js: false,
+        dirs: false,
+        evidence: false,
+        exposedKeys: false,
+        history: false,
+        compare: false,
+        triage: false,
+        stats: false,
+        criticalAlert: false,
+      };
+    }
+
+    state.pendingRenders = createPendingRenderState();
+    state.renderScheduled = false;
+
+    function generateSessionId() {
+      return `RCN-${Math.random().toString(16).slice(2, 7).toUpperCase()}`;
+    }
+
+    function refreshSessionId() {
+      const nextId = generateSessionId();
+      document.getElementById('session-id').textContent = nextId;
+      return nextId;
+    }
+
+    function setScanMode(mode) {
+      const normalized = ['fast', 'balanced', 'deep'].includes(mode) ? mode : 'balanced';
+      state.scanMode = normalized;
+      document.getElementById('scan-mode-select').value = normalized;
+    }
+
+    function syncModuleToggles() {
+      document.querySelectorAll('.toggle').forEach((toggleEl) => {
+        toggleEl.classList.toggle('on', !!state.modules[toggleEl.dataset.module]);
+      });
+    }
+
+    // Toggle module
+    function toggleModule(el) {
+      el.classList.toggle('on');
+      const mod = el.dataset.module;
+      state.modules[mod] = el.classList.contains('on');
+    }
+
+    // Tab switching
+    function switchTab(name, navEl) {
+      state.activeTab = name;
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.nav-item').forEach(t => t.classList.remove('active'));
+      document.getElementById('tab-' + name).classList.add('active');
+      document.querySelectorAll('.tab').forEach(t => { if (t.dataset.tab === name) t.classList.add('active'); });
+      if (navEl) navEl.classList.add('active');
+      renderActiveTab();
+    }
+
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => switchTab(tab.dataset.tab, null));
+    });
+    document.getElementById('scan-mode-select').addEventListener('change', (event) => {
+      setScanMode(event.target.value);
+    });
+    document.getElementById('triage-module-filter').addEventListener('change', (event) => {
+      setTriageFilter('module', event.target.value);
+    });
+    document.getElementById('triage-severity-filter').addEventListener('change', (event) => {
+      setTriageFilter('severity', event.target.value);
+    });
+    document.getElementById('triage-status-filter').addEventListener('change', (event) => {
+      setTriageFilter('status', event.target.value);
+    });
+
+    // Terminal
+    let logCount = 0;
+    function formatLogTime(value) {
+      if (!value) {
+        const now = new Date();
+        return [now.getHours(), now.getMinutes(), now.getSeconds()]
+          .map(n => String(n).padStart(2, '0')).join(':');
+      }
+
+      if (/^\d{2}:\d{2}:\d{2}$/.test(value)) return value;
+
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) return String(value).slice(-8);
+
+      return [parsed.getHours(), parsed.getMinutes(), parsed.getSeconds()]
+        .map(n => String(n).padStart(2, '0')).join(':');
+    }
+
+    function appendTerminalLine(entry, highlight = true) {
+      const term = document.getElementById('terminal');
+      const line = document.createElement('div');
+      line.className = `log-line${highlight ? ' new' : ''}`;
+      line.innerHTML = `<span class="log-time">${formatLogTime(entry.time)}</span><span class="log-module ${entry.module}">${String(entry.module || 'system').toUpperCase().padEnd(8)}</span><span class="log-msg ${entry.level || ''}">${entry.msg}</span>`;
+      term.appendChild(line);
+      while (term.childElementCount > MAX_TERMINAL_LINES) {
+        term.removeChild(term.firstChild);
+      }
+      term.scrollTop = term.scrollHeight;
+    }
+
+    function log(module, msg, cls = '') {
+      const now = new Date();
+      const t = [now.getHours(), now.getMinutes(), now.getSeconds()]
+        .map(n => String(n).padStart(2, '0')).join(':');
+      const entry = { time: t, module, msg, level: cls || 'info' };
+      state.logs.push(entry);
+      if (state.logs.length > MAX_LOG_ENTRIES) {
+        state.logs = state.logs.slice(-MAX_LOG_ENTRIES);
+      }
+      appendTerminalLine(entry, true);
+      logCount++;
+    }
+
+    function clearTerminal() {
+      document.getElementById('terminal').innerHTML = '';
+      state.logs = [];
+    }
+
+    function renderTerminalFromState() {
+      const term = document.getElementById('terminal');
+      term.innerHTML = '';
+      state.logs.slice(-MAX_TERMINAL_LINES).forEach((entry) => appendTerminalLine(entry, false));
+    }
+
+    function flushPendingRenders() {
+      state.renderScheduled = false;
+      const pending = state.pendingRenders;
+      state.pendingRenders = createPendingRenderState();
+
+      if (pending.subdomains) renderSubdomains();
+      if (pending.ports) renderPorts();
+      if (pending.js) renderJS();
+      if (pending.dirs) renderDirs();
+      if (pending.evidence) renderEvidence();
+      if (pending.exposedKeys) renderExposedKeys();
+      if (pending.history) renderHistory();
+      if (pending.compare) renderComparePanel();
+      if (pending.triage) renderTriage();
+      if (pending.criticalAlert) updateCriticalAlert();
+      if (pending.stats) updateStats();
+    }
+
+    function scheduleRender(...keys) {
+      keys.forEach((key) => {
+        state.pendingRenders[key] = true;
+      });
+
+      if (state.renderScheduled) return;
+      state.renderScheduled = true;
+      window.requestAnimationFrame(flushPendingRenders);
+    }
+
+    // Update stats
+    function updateStats() {
+      const liveCount = state.subdomains.filter(s => s.status === 'live').length;
+      const critPorts = state.ports.filter(p => p.critical).length;
+      const highJs = state.jsFindings.filter(j => j.severity === 'high' || j.severity === 'critical').length;
+      const ok200 = state.dirs.filter(d => d.code === 200).length;
+      const exposedKeyCount = getExposedKeys().length;
+      const jsAnalyzed = state.moduleStats.js.analyzed || 0;
+      const triageCount = getAllTriageFindings().length;
+
+      document.getElementById('stat-sub').textContent = state.subdomains.length;
+      document.getElementById('stat-sub-live').textContent = liveCount + ' live';
+      document.getElementById('stat-ports').textContent = state.ports.length;
+      document.getElementById('stat-ports-crit').textContent = critPorts + ' critical';
+      document.getElementById('stat-js').textContent = state.jsFindings.length;
+      document.getElementById('stat-js-high').textContent = highJs + ' high severity' + (jsAnalyzed ? ' | ' + jsAnalyzed + ' scanned' : '');
+      document.getElementById('stat-dirs').textContent = state.dirs.length;
+      document.getElementById('stat-dirs-200').textContent = ok200 + ' responding 200';
+
+      document.getElementById('nav-sub-badge').textContent = state.subdomains.length;
+      document.getElementById('nav-port-badge').textContent = state.ports.length;
+      document.getElementById('nav-js-badge').textContent = state.jsFindings.length;
+      document.getElementById('nav-dir-badge').textContent = state.dirs.length;
+      document.getElementById('nav-triage-badge').textContent = triageCount;
+      document.getElementById('nav-history-badge').textContent = state.history.length;
+
+      document.getElementById('sub-count-chip').textContent = state.subdomains.length + ' found';
+      document.getElementById('port-count-chip').textContent = state.ports.length + ' open';
+      document.getElementById('js-count-chip').textContent = state.jsFindings.length + ' findings';
+      document.getElementById('dir-count-chip').textContent = state.dirs.length + ' paths';
+      document.getElementById('key-count-chip').textContent = exposedKeyCount + ' candidates';
+      document.getElementById('triage-count-chip').textContent = triageCount + ' findings';
+      document.getElementById('history-count-chip').textContent = state.history.length + ' saved';
+    }
+
+    // Render subdomains
+    function renderSubdomains() {
+      const overviewEl = document.getElementById('overview-subdomain-list');
+      const fullEl = document.getElementById('full-subdomain-list');
+      if (state.subdomains.length === 0) {
+        overviewEl.innerHTML = '<div class="empty-state">No subdomains discovered</div>';
+        if (state.activeTab === 'subdomains') {
+          fullEl.innerHTML = '<div class="empty-state">No subdomains discovered</div>';
+        }
+        return;
+      }
+      const makeItem = (s) => `
+        <div class="subdomain-item">
+          <span class="subdomain-name">${s.name}</span>
+          <span class="subdomain-ip">${s.ip}</span>
+          <span class="subdomain-status ${s.status}">${s.status.toUpperCase()}</span>
+        </div>`;
+      overviewEl.innerHTML = state.subdomains.slice(-5).map(makeItem).join('');
+      if (state.activeTab === 'subdomains') {
+        const visibleItems = state.subdomains.slice(-MAX_RENDER_ITEMS);
+        const summary = state.subdomains.length > MAX_RENDER_ITEMS
+          ? `<div class="empty-state" style="padding:12px;">Showing latest ${visibleItems.length} of ${state.subdomains.length} subdomains. Export the report for the full list.</div>`
+          : '';
+        fullEl.innerHTML = summary + visibleItems.map(makeItem).join('');
+      }
+    }
+
+    // Render ports
+    function renderPorts() {
+      const fullEl = document.getElementById('full-port-list');
+      if (state.ports.length === 0) {
+        if (state.activeTab === 'ports') {
+          fullEl.innerHTML = '<div class="empty-state">No open ports discovered</div>';
+        }
+        return;
+      }
+      if (state.activeTab === 'ports') {
+        fullEl.innerHTML = `<div class="port-grid">${state.ports.map(p => `
+          <div class="port-item ${p.critical ? 'critical' : p.interesting ? 'interesting' : ''}">
+            <div class="port-num">${p.port}</div>
+            <div class="port-service">${p.service}</div>
+          </div>`).join('')}</div>`;
+      }
+    }
+
+    // Render JS
+    function renderJS() {
+      const overviewEl = document.getElementById('overview-js-list');
+      const fullEl = document.getElementById('full-js-list');
+      const jsAnalyzed = state.moduleStats.js.analyzed || 0;
+      if (state.jsFindings.length === 0) {
+        const emptyMessage = jsAnalyzed ? `No JS findings. ${jsAnalyzed} files scanned.` : 'No JS findings';
+        overviewEl.innerHTML = `<div class="empty-state">${emptyMessage}</div>`;
+        if (state.activeTab === 'js') {
+          fullEl.innerHTML = `<div class="empty-state">${emptyMessage}</div>`;
+        }
+        return;
+      }
+      const smap = { critical: 'sev-critical', high: 'sev-critical', medium: 'sev-high', low: 'sev-low', info: 'sev-info' };
+      const makeItem = (f) => `
+        <div class="finding-item ${f.severity === 'high' || f.severity === 'critical' ? 'high' : f.severity === 'low' ? 'low' : ''}">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+            <span class="finding-type">${f.type}</span>
+            <span class="severity-badge ${smap[f.severity] || 'sev-info'}">${f.severity}</span>
+          </div>
+          <div class="finding-url">${f.url}</div>
+          <div class="finding-detail">${f.detail}${f.source ? ` | ${f.source}` : ''}</div>
+        </div>`;
+      overviewEl.innerHTML = state.jsFindings.slice(-3).map(makeItem).join('');
+      if (state.activeTab === 'js') {
+        const visibleItems = state.jsFindings.slice(-MAX_RENDER_ITEMS);
+        const summary = state.jsFindings.length > MAX_RENDER_ITEMS
+          ? `<div class="empty-state" style="padding:12px;">Showing latest ${visibleItems.length} of ${state.jsFindings.length} findings. Export the report for the full list.</div>`
+          : '';
+        fullEl.innerHTML = summary + visibleItems.map(makeItem).join('');
+      }
+    }
+
+    function getExposedKeys() {
+      return state.jsFindings.filter((finding) =>
+        /(KEY|SECRET|TOKEN|PASSWORD|PRIVATE_KEY)/.test(finding.type || '')
+      );
+    }
+
+    function renderExposedKeys() {
+      const keysEl = document.getElementById('exposed-keys-list');
+      if (state.activeTab !== 'overview') return;
+      const exposedKeys = getExposedKeys();
+      if (!exposedKeys.length) {
+        keysEl.innerHTML = '<div class="empty-state">No exposed key candidates yet</div>';
+        return;
+      }
+
+      const smap = { critical: 'sev-critical', high: 'sev-critical', medium: 'sev-high', low: 'sev-low', info: 'sev-info' };
+      keysEl.innerHTML = exposedKeys.map((finding) => `
+        <div class="finding-item ${finding.severity === 'high' || finding.severity === 'critical' ? 'high' : 'low'}">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+            <span class="finding-type">${finding.type}</span>
+            <span class="severity-badge ${smap[finding.severity] || 'sev-info'}">${finding.severity}</span>
+          </div>
+          <div class="finding-url">${finding.url}</div>
+          <div class="finding-detail">${finding.detail}${finding.source ? ` | ${finding.source}` : ''}</div>
+        </div>
+      `).join('');
+    }
+
+    function currentTriageNamespace() {
+      return state.currentScanId || document.getElementById('session-id').textContent || document.getElementById('target-input').value.trim() || 'live';
+    }
+
+    function triageStorageKey() {
+      return `recon_triage:${currentTriageNamespace()}`;
+    }
+
+    function loadTriageState() {
+      try {
+        const raw = window.localStorage.getItem(triageStorageKey());
+        state.triageStatuses = raw ? JSON.parse(raw) : {};
+      } catch (error) {
+        state.triageStatuses = {};
+      }
+      scheduleRender('triage', 'stats');
+    }
+
+    function saveTriageState() {
+      try {
+        window.localStorage.setItem(triageStorageKey(), JSON.stringify(state.triageStatuses));
+      } catch (error) {
+        log('system', `Unable to persist triage state: ${error.message}`, 'warn');
+      }
+    }
+
+    function buildTriageKey(module, data) {
+      if (module === 'subdomain') return `subdomain:${String(data.name || '').toLowerCase()}`;
+      if (module === 'dns') return `dns:${String(data.kind || '').toLowerCase()}|${String(data.name || '').toLowerCase()}|${String(data.value || '').toLowerCase()}`;
+      if (module === 'port') return `port:${String(data.port || '')}`;
+      if (module === 'fingerprint') return `fingerprint:${String(data.kind || '').toLowerCase()}|${String(data.name || '').toLowerCase()}|${String(data.value || '').toLowerCase()}`;
+      if (module === 'js') return `js:${String(data.type || '').toLowerCase()}|${String(data.url || '').toLowerCase()}`;
+      if (module === 'url_intel') return `url_intel:${String(data.kind || '').toLowerCase()}|${String(data.name || '').toLowerCase()}|${String(data.value || '').toLowerCase()}`;
+      if (module === 'dir') return `dir:${String(data.path || '').toLowerCase()}`;
+      return `${module}:${JSON.stringify(data)}`;
+    }
+
+    function directoryTriageSeverity(data) {
+      const path = String(data.path || '').toLowerCase();
+      const code = Number(data.code || 0);
+      const sensitivePattern = /(\.env|\.git|backup|config|swagger|graphql|actuator|metrics|admin|debug|phpinfo|\.bak|\.zip)/;
+
+      if (code >= 500) return 'high';
+      if (code === 200 && sensitivePattern.test(path)) return 'high';
+      if (code === 200) return 'medium';
+      if (code === 403) return 'low';
+      return 'info';
+    }
+
+    function subdomainTriageSeverity(data) {
+      const name = String(data.name || '').toLowerCase();
+      if (/(admin|dev|staging|internal|beta|vpn)/.test(name) && data.status === 'live') return 'medium';
+      if (data.status === 'unknown') return 'medium';
+      if (data.status === 'dead') return 'low';
+      return 'info';
+    }
+
+    function severityRank(severity) {
+      return { critical: 5, high: 4, medium: 3, low: 2, info: 1 }[severity] || 0;
+    }
+
+    function buildTriageFinding(module, data) {
+      if (module === 'subdomain') {
+        const key = buildTriageKey(module, data);
+        return {
+          key,
+          module,
+          severity: subdomainTriageSeverity(data),
+          status: state.triageStatuses[key] || 'new',
+          title: data.name,
+          meta: `${String(data.status || 'unknown').toUpperCase()} | ${data.ip || '-'}${data.code ? ` | [${data.code}]` : ''}`,
+          source: data.source || 'subdomain scan',
+          proof: `Subdomain: ${data.name}\nStatus: ${data.status}\nIP: ${data.ip || '-'}\nCode: ${data.code || '-'}\nSource: ${data.source || 'subdomain scan'}\nEvidence: ${data.evidence || `${data.name} resolved to ${data.ip || '-'}`}`,
+        };
+      }
+
+      if (module === 'dns') {
+        const key = buildTriageKey(module, data);
+        return {
+          key,
+          module,
+          severity: data.kind === 'AXFR' ? 'critical' : data.kind === 'WILDCARD' ? 'medium' : ['SPF', 'DMARC', 'DKIM'].includes(data.kind) ? 'info' : 'low',
+          status: state.triageStatuses[key] || 'new',
+          title: `${data.kind} ${data.name}`,
+          meta: `${data.value || '-'} | ${data.source || 'dns recon'}`,
+          source: data.source || 'dns recon',
+          proof: `DNS Kind: ${data.kind}\nName: ${data.name}\nValue: ${data.value || '-'}\nSource: ${data.source || 'dns recon'}\nEvidence: ${data.evidence || 'DNS record discovered'}`,
+        };
+      }
+
+      if (module === 'port') {
+        const key = buildTriageKey(module, data);
+        return {
+          key,
+          module,
+          severity: data.critical ? 'critical' : data.interesting ? 'medium' : 'info',
+          status: state.triageStatuses[key] || 'new',
+          title: `${data.port}/${data.service}`,
+          meta: `${data.critical ? 'CRITICAL' : data.interesting ? 'INTERESTING' : 'OPEN'} | ${data.source || 'port scan'}`,
+          source: data.source || 'port scan',
+          proof: `Port: ${data.port}/${data.service}\nCritical: ${Boolean(data.critical)}\nInteresting: ${Boolean(data.interesting)}\nSource: ${data.source || 'port scan'}\nEvidence: ${data.evidence || `Open service discovered on ${data.port}`}`,
+        };
+      }
+
+      if (module === 'fingerprint') {
+        const key = buildTriageKey(module, data);
+        return {
+          key,
+          module,
+          severity: data.kind === 'WAF_CDN' ? 'info' : data.kind === 'TLS' ? 'low' : 'info',
+          status: state.triageStatuses[key] || 'new',
+          title: `${data.kind} ${data.name}`,
+          meta: `${data.value || '-'} | ${data.source || 'fingerprint scan'}`,
+          source: data.source || 'fingerprint scan',
+          proof: `Fingerprint Kind: ${data.kind}\nName: ${data.name}\nValue: ${data.value || '-'}\nSource: ${data.source || 'fingerprint scan'}\nEvidence: ${data.evidence || 'Fingerprint signal collected'}`,
+        };
+      }
+
+      if (module === 'js') {
+        const key = buildTriageKey(module, data);
+        return {
+          key,
+          module,
+          severity: String(data.severity || 'info').toLowerCase(),
+          status: state.triageStatuses[key] || 'new',
+          title: `${data.type} @ ${data.url}`,
+          meta: `${String(data.severity || 'info').toUpperCase()} | ${data.source || 'js analysis'}`,
+          source: data.source || 'js analysis',
+          proof: `Type: ${data.type}\nURL: ${data.url}\nSeverity: ${data.severity}\nSource: ${data.source || 'js analysis'}\nEvidence: ${data.evidence || data.detail || 'Pattern matched in JavaScript content'}`,
+        };
+      }
+
+      if (module === 'url_intel') {
+        const key = buildTriageKey(module, data);
+        return {
+          key,
+          module,
+          severity: data.kind === 'API_ROUTE' ? 'medium' : data.kind === 'INTERESTING_FILE' ? 'high' : data.kind === 'PARAM' ? 'low' : 'info',
+          status: state.triageStatuses[key] || 'new',
+          title: `${data.kind} ${data.name}`,
+          meta: `${data.value || '-'} | ${data.source || 'url intelligence'}`,
+          source: data.source || 'url intelligence',
+          proof: `URL Intel Kind: ${data.kind}\nName: ${data.name}\nValue: ${data.value || '-'}\nSource: ${data.source || 'url intelligence'}\nEvidence: ${data.evidence || 'URL intelligence signal collected'}`,
+        };
+      }
+
+      if (module === 'dir') {
+        const key = buildTriageKey(module, data);
+        return {
+          key,
+          module,
+          severity: directoryTriageSeverity(data),
+          status: state.triageStatuses[key] || 'new',
+          title: data.path,
+          meta: `[${data.code}] ${data.size || '-'} | ${data.source || 'dir scan'}`,
+          source: data.source || 'dir scan',
+          proof: `Path: ${data.path}\nStatus: ${data.code}\nSize: ${data.size || '-'}\nSource: ${data.source || 'dir scan'}\nEvidence: ${data.evidence || `Directory probe returned ${data.code}`}`,
+        };
+      }
+
+      return null;
+    }
+
+    function getAllTriageFindings() {
+      const findings = [];
+      state.subdomains.forEach((item) => findings.push(buildTriageFinding('subdomain', item)));
+      state.dnsRecords.forEach((item) => findings.push(buildTriageFinding('dns', item)));
+      state.ports.forEach((item) => findings.push(buildTriageFinding('port', item)));
+      state.fingerprints.forEach((item) => findings.push(buildTriageFinding('fingerprint', item)));
+      state.jsFindings.forEach((item) => findings.push(buildTriageFinding('js', item)));
+      state.urlIntel.forEach((item) => findings.push(buildTriageFinding('url_intel', item)));
+      state.dirs.forEach((item) => findings.push(buildTriageFinding('dir', item)));
+
+      return findings
+        .filter(Boolean)
+        .sort((left, right) => {
+          const severityDiff = severityRank(right.severity) - severityRank(left.severity);
+          if (severityDiff !== 0) return severityDiff;
+          return left.title.localeCompare(right.title);
+        });
+    }
+
+    function setTriageFilter(name, value) {
+      if (!['module', 'severity', 'status'].includes(name)) return;
+      state.triageFilters[name] = value || 'all';
+      scheduleRender('triage');
+    }
+
+    function setFindingTriageStatus(key, status) {
+      state.triageStatuses[key] = status;
+      saveTriageState();
+      scheduleRender('triage');
+    }
+
+    async function copyTextToClipboard(text) {
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        log('system', 'Proof copied to clipboard.', 'success');
+      } catch (error) {
+        const area = document.createElement('textarea');
+        area.value = text;
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand('copy');
+        area.remove();
+        log('system', 'Proof copied to clipboard.', 'success');
+      }
+    }
+
+    function copyProofFromAttr(button) {
+      const proof = decodeURIComponent(button.dataset.proof || '');
+      copyTextToClipboard(proof);
+    }
+
+    function renderTriage() {
+      const listEl = document.getElementById('triage-list');
+      const findings = getAllTriageFindings().filter((item) => {
+        if (state.triageFilters.module !== 'all' && item.module !== state.triageFilters.module) return false;
+        if (state.triageFilters.severity !== 'all' && item.severity !== state.triageFilters.severity) return false;
+        if (state.triageFilters.status !== 'all' && item.status !== state.triageFilters.status) return false;
+        return true;
+      });
+
+      document.getElementById('triage-module-filter').value = state.triageFilters.module;
+      document.getElementById('triage-severity-filter').value = state.triageFilters.severity;
+      document.getElementById('triage-status-filter').value = state.triageFilters.status;
+
+      if (!findings.length) {
+        listEl.innerHTML = '<div class="empty-state">No findings match the current triage filters.</div>';
+        return;
+      }
+
+      const severityClassMap = {
+        critical: 'sev-critical',
+        high: 'sev-high',
+        medium: 'sev-medium',
+        low: 'sev-low',
+        info: 'sev-info',
+      };
+
+      listEl.innerHTML = findings.map((item) => `
+        <div class="triage-item">
+          <div class="triage-top">
+            <div>
+              <div class="triage-title">${item.title}</div>
+              <div class="triage-meta">
+                MODULE: ${item.module.toUpperCase()}<br>
+                ${item.meta}
+              </div>
+            </div>
+            <span class="severity-badge ${severityClassMap[item.severity] || 'sev-info'}">${item.severity}</span>
+          </div>
+          <div class="triage-actions">
+            <select class="target-input mode-select triage-status-select" onchange="setFindingTriageStatus('${item.key}', this.value)">
+              <option value="new" ${item.status === 'new' ? 'selected' : ''}>NEW</option>
+              <option value="interesting" ${item.status === 'interesting' ? 'selected' : ''}>INTERESTING</option>
+              <option value="validated" ${item.status === 'validated' ? 'selected' : ''}>VALIDATED</option>
+              <option value="false_positive" ${item.status === 'false_positive' ? 'selected' : ''}>FALSE POSITIVE</option>
+            </select>
+            <button class="copy-btn" data-proof="${encodeURIComponent(item.proof)}" onclick="copyProofFromAttr(this)">COPY PROOF</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderActiveTab() {
+      if (state.activeTab === 'overview') {
+        renderSubdomains();
+        renderJS();
+        renderEvidence();
+        renderExposedKeys();
+        return;
+      }
+
+      if (state.activeTab === 'subdomains') {
+        renderSubdomains();
+        return;
+      }
+
+      if (state.activeTab === 'ports') {
+        renderPorts();
+        return;
+      }
+
+      if (state.activeTab === 'js') {
+        renderJS();
+        return;
+      }
+
+      if (state.activeTab === 'dirs') {
+        renderDirs();
+        return;
+      }
+
+      if (state.activeTab === 'triage') {
+        renderTriage();
+        return;
+      }
+
+      if (state.activeTab === 'history') {
+        renderHistory();
+        renderComparePanel();
+        return;
+      }
+    }
+
+    function historySummaryText(summary = {}) {
+      return `${summary.subdomains || 0} subs | ${summary.dns_records || 0} dns | ${summary.ports || 0} ports | ${summary.fingerprints || 0} fp | ${summary.js_findings || 0} js | ${summary.url_intel || 0} url | ${summary.dirs || 0} dirs`;
+    }
+
+    function formatHistoryTime(value) {
+      if (!value) return 'unknown time';
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) return value;
+      return parsed.toLocaleString();
+    }
+
+    function getHistoryRecord(scanId) {
+      return state.history.find((item) => item.scan_id === scanId) || null;
+    }
+
+    function formatCompareSlot(scanId, slotLabel) {
+      const record = getHistoryRecord(scanId);
+      if (!record) {
+        return `
+          <div class="compare-slot">
+            <div class="compare-slot-label">${slotLabel}</div>
+            <div class="compare-slot-value">No scan selected</div>
+            <div class="compare-slot-meta">Pick a saved scan from the list below.</div>
+          </div>
+        `;
+      }
+
+      return `
+        <div class="compare-slot">
+          <div class="compare-slot-label">${slotLabel}</div>
+          <div class="compare-slot-value">${record.target}</div>
+          <div class="compare-slot-meta">
+            ${String(record.scan_mode || 'balanced').toUpperCase()}<br>
+            ${formatHistoryTime(record.completed_at || record.started_at)}<br>
+            ${historySummaryText(record.summary || {})}
+          </div>
+        </div>
+      `;
+    }
+
+    function formatCompareDelta(delta) {
+      if (delta > 0) return `+${delta}`;
+      return String(delta || 0);
+    }
+
+    function compareDeltaClass(delta) {
+      if (delta > 0) return 'delta-pos';
+      if (delta < 0) return 'delta-neg';
+      return 'delta-zero';
+    }
+
+    function renderHistory() {
+      const historyEl = document.getElementById('history-list');
+      const toolbarEl = document.getElementById('history-compare-toolbar');
+
+      toolbarEl.innerHTML = `
+        ${formatCompareSlot(state.compare.leftId, 'LEFT // BASELINE')}
+        ${formatCompareSlot(state.compare.rightId, 'RIGHT // NEWER RUN')}
+        <div class="compare-toolbar-actions">
+          <button class="history-btn" onclick="runHistoryCompare()" ${(!state.compare.leftId || !state.compare.rightId || state.compare.loading) ? 'disabled' : ''}>
+            ${state.compare.loading ? 'COMPARING...' : 'RUN DIFF'}
+          </button>
+          <button class="history-btn" onclick="swapHistoryCompare()" ${(!state.compare.leftId || !state.compare.rightId || state.compare.loading) ? 'disabled' : ''}>SWAP</button>
+          <button class="history-btn" onclick="clearHistoryCompare()" ${(!state.compare.leftId && !state.compare.rightId && !state.compare.data) ? 'disabled' : ''}>CLEAR</button>
+        </div>
+      `;
+
+      if (state.history.length === 0) {
+        historyEl.innerHTML = '<div class="empty-state">No saved scans yet. Complete a scan to build history.</div>';
+        return;
+      }
+
+      historyEl.innerHTML = state.history.map((item) => `
+        <div class="history-item">
+          <div class="history-top">
+            <div class="history-target">${item.target}</div>
+            <div class="history-mode">${String(item.scan_mode || 'balanced').toUpperCase()}</div>
+          </div>
+          <div class="history-meta">
+            Started: ${formatHistoryTime(item.started_at)}<br>
+            Completed: ${formatHistoryTime(item.completed_at)}<br>
+            Status: ${item.status || 'completed'}
+          </div>
+          <div class="history-summary">${historySummaryText(item.summary)}</div>
+          <div class="history-actions">
+            <button class="history-btn" onclick="loadSavedScan('${item.scan_id}')">LOAD</button>
+            <button class="history-btn" onclick="downloadSavedReport('${item.scan_id}', 'json')">JSON</button>
+            <button class="history-btn" onclick="downloadSavedReport('${item.scan_id}', 'md')">MD</button>
+            <button class="history-btn" onclick="downloadSavedReport('${item.scan_id}', 'html')">HTML</button>
+            <button class="history-btn ${state.compare.leftId === item.scan_id ? 'active' : ''}" onclick="selectHistoryCompare('left', '${item.scan_id}')">SET LEFT</button>
+            <button class="history-btn ${state.compare.rightId === item.scan_id ? 'active' : ''}" onclick="selectHistoryCompare('right', '${item.scan_id}')">SET RIGHT</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderCompareEntryList(entries, kind, emptyText) {
+      if (!entries.length) {
+        return `<div class="empty-state" style="padding:8px 0;">${emptyText}</div>`;
+      }
+
+      return entries.slice(0, 8).map((entry) => {
+        if (kind === 'changed') {
+          return `
+            <div class="compare-entry changed">
+              <div class="compare-entry-title">${entry.title}</div>
+              <div class="compare-entry-transition">
+                <div>
+                  <div class="compare-entry-transition-label">LEFT</div>
+                  <div class="compare-entry-transition-value">${entry.before.summary}</div>
+                  <div class="compare-entry-source">${entry.before.source || 'unknown'}</div>
+                </div>
+                <div>
+                  <div class="compare-entry-transition-label">RIGHT</div>
+                  <div class="compare-entry-transition-value">${entry.after.summary}</div>
+                  <div class="compare-entry-source">${entry.after.source || 'unknown'}</div>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
+        return `
+          <div class="compare-entry ${kind}">
+            <div class="compare-entry-title">${entry.title}</div>
+            <div class="compare-entry-summary">${entry.summary}</div>
+            <div class="compare-entry-source">${entry.source || 'unknown'}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderCompareModule(moduleKey, moduleLabel, moduleData) {
+      if (!moduleData) return '';
+
+      return `
+        <div class="compare-module">
+          <div class="compare-module-header">
+            <div class="compare-module-title">${moduleLabel}</div>
+            <div class="compare-module-meta">
+              Left ${moduleData.left_count || 0} | Right ${moduleData.right_count || 0} |
+              +${moduleData.added_count || 0} / -${moduleData.removed_count || 0} / ~${moduleData.changed_count || 0}
+            </div>
+          </div>
+          <div class="compare-module-columns">
+            <div class="compare-change-group">
+              <div class="compare-change-title">ADDED IN RIGHT</div>
+              <div class="compare-change-list">${renderCompareEntryList(moduleData.added || [], 'added', 'No new items')}</div>
+            </div>
+            <div class="compare-change-group">
+              <div class="compare-change-title">REMOVED SINCE LEFT</div>
+              <div class="compare-change-list">${renderCompareEntryList(moduleData.removed || [], 'removed', 'No removed items')}</div>
+            </div>
+            <div class="compare-change-group">
+              <div class="compare-change-title">CHANGED</div>
+              <div class="compare-change-list">${renderCompareEntryList(moduleData.changed || [], 'changed', 'No changed items')}</div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderComparePanel() {
+      const panelEl = document.getElementById('compare-panel');
+      const statusChip = document.getElementById('compare-status-chip');
+
+      if (state.compare.loading) {
+        statusChip.textContent = 'Comparing...';
+        panelEl.innerHTML = '<div class="empty-state">Building diff between the selected scans...</div>';
+        return;
+      }
+
+      if (!state.compare.leftId || !state.compare.rightId) {
+        statusChip.textContent = 'Select 2 scans';
+        panelEl.innerHTML = '<div class="empty-state">Select two saved scans and run compare to view the diff.</div>';
+        return;
+      }
+
+      if (!state.compare.data) {
+        statusChip.textContent = 'Ready to compare';
+        panelEl.innerHTML = '<div class="empty-state">Selections saved. Click RUN DIFF to generate the comparison.</div>';
+        return;
+      }
+
+      const diff = state.compare.data;
+      const summaryDelta = diff.summary_delta || {};
+      const deltaLabels = {
+        subdomains: 'SUBDOMAINS',
+        live_subdomains: 'LIVE SUBS',
+        dns_records: 'DNS',
+        ports: 'PORTS',
+        critical_ports: 'CRITICAL PORTS',
+        fingerprints: 'FINGERPRINTS',
+        js_findings: 'JS FINDINGS',
+        high_js_findings: 'HIGH JS',
+        js_scanned: 'JS SCANNED',
+        url_intel: 'URL INTEL',
+        exposed_keys: 'EXPOSED KEYS',
+        dirs: 'DIRECTORIES',
+        ok_dirs: '200 PATHS',
+      };
+      const moduleLabels = {
+        subdomains: 'SUBDOMAINS',
+        dns_records: 'DNS',
+        ports: 'PORTS',
+        fingerprints: 'FINGERPRINTS',
+        js_findings: 'JS FINDINGS',
+        url_intel: 'URL INTEL',
+        directories: 'DIRECTORIES',
+      };
+      const totalChangeCount = Object.values(diff.modules || {}).reduce((sum, moduleData) => (
+        sum + (moduleData.added_count || 0) + (moduleData.removed_count || 0) + (moduleData.changed_count || 0)
+      ), 0);
+
+      statusChip.textContent = `${totalChangeCount} change${totalChangeCount === 1 ? '' : 's'}`;
+      panelEl.innerHTML = `
+        <div class="compare-grid">
+          <div class="compare-card">
+            <div class="compare-card-tag">LEFT // BASELINE</div>
+            <div class="compare-card-title">${diff.left.target}</div>
+            <div class="compare-card-meta">
+              ${String(diff.left.scan_mode || 'balanced').toUpperCase()}<br>
+              Started: ${formatHistoryTime(diff.left.started_at)}<br>
+              Completed: ${formatHistoryTime(diff.left.completed_at)}<br>
+              ${historySummaryText(diff.left.summary || {})}
+            </div>
+          </div>
+          <div class="compare-card">
+            <div class="compare-card-tag">RIGHT // NEWER RUN</div>
+            <div class="compare-card-title">${diff.right.target}</div>
+            <div class="compare-card-meta">
+              ${String(diff.right.scan_mode || 'balanced').toUpperCase()}<br>
+              Started: ${formatHistoryTime(diff.right.started_at)}<br>
+              Completed: ${formatHistoryTime(diff.right.completed_at)}<br>
+              ${historySummaryText(diff.right.summary || {})}
+            </div>
+          </div>
+        </div>
+        <div class="compare-delta-grid">
+          ${Object.entries(summaryDelta).map(([key, metric]) => `
+            <div class="compare-delta-item">
+              <div class="compare-delta-label">${deltaLabels[key] || key.toUpperCase()}</div>
+              <div class="compare-delta-values">
+                <div class="compare-delta-main">${metric.left} -> ${metric.right}</div>
+                <div class="compare-delta-change ${compareDeltaClass(metric.delta)}">${formatCompareDelta(metric.delta)}</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+        <div class="compare-modules">
+          ${Object.entries(diff.modules || {}).map(([moduleKey, moduleData]) => renderCompareModule(moduleKey, moduleLabels[moduleKey] || moduleKey.toUpperCase(), moduleData)).join('')}
+        </div>
+      `;
+    }
+
+    // Render dirs
+    function renderDirs() {
+      const fullEl = document.getElementById('full-dir-list');
+      if (state.dirs.length === 0) {
+        if (state.activeTab === 'dirs') {
+          fullEl.innerHTML = '<div class="empty-state">No directories found</div>';
+        }
+        return;
+      }
+      const codeClass = (c) => {
+        if (c === 200) return 's200';
+        if (c === 301 || c === 302) return 's301';
+        if (c === 403) return 's403';
+        if (c >= 500) return 's500';
+        return 's404';
+      };
+      if (state.activeTab === 'dirs') {
+        const visibleItems = state.dirs.slice(-MAX_RENDER_ITEMS);
+        const summary = state.dirs.length > MAX_RENDER_ITEMS
+          ? `<div class="empty-state" style="padding:12px;">Showing latest ${visibleItems.length} of ${state.dirs.length} paths. Export the report for the full list.</div>`
+          : '';
+        fullEl.innerHTML = summary + visibleItems.map(d => `
+          <div class="dir-item">
+            <span class="dir-code ${codeClass(d.code)}">${d.code}</span>
+            <span class="dir-path">${d.path}</span>
+            <span class="dir-size">${d.size}</span>
+          </div>`).join('');
+      }
+    }
+
+    function buildEvidenceEntry(module, data) {
+      if (module === 'subdomain') {
+        return {
+          module,
+          main: `${data.name} -> ${data.status.toUpperCase()}${data.code && data.code !== '-' ? ` [${data.code}]` : ''}`,
+          source: data.source || 'unknown',
+          detail: data.evidence || `${data.name} resolved to ${data.ip}`,
+        };
+      }
+
+      if (module === 'dns') {
+        return {
+          module,
+          main: `${data.kind} ${data.name} -> ${data.value}`,
+          source: data.source || 'unknown',
+          detail: data.evidence || 'DNS record discovered',
+        };
+      }
+
+      if (module === 'port') {
+        return {
+          module,
+          main: `Port ${data.port}/${data.service}`,
+          source: data.source || 'unknown',
+          detail: data.evidence || `Open service discovered on ${data.port}`,
+        };
+      }
+
+      if (module === 'fingerprint') {
+        return {
+          module,
+          main: `${data.kind} ${data.name} -> ${data.value}`,
+          source: data.source || 'unknown',
+          detail: data.evidence || 'Fingerprint signal collected',
+        };
+      }
+
+      if (module === 'js') {
+        return {
+          module,
+          main: `${data.type} in ${data.url}`,
+          source: data.source || 'unknown',
+          detail: data.evidence || data.detail || 'Pattern matched in JavaScript content',
+        };
+      }
+
+      if (module === 'url_intel') {
+        return {
+          module,
+          main: `${data.kind} ${data.name}`,
+          source: data.source || 'unknown',
+          detail: data.evidence || data.value || 'URL intelligence signal collected',
+        };
+      }
+
+      if (module === 'dir') {
+        return {
+          module,
+          main: `${data.path} [${data.code}]`,
+          source: data.source || 'unknown',
+          detail: data.evidence || `Directory probe returned ${data.code}`,
+        };
+      }
+
+      return {
+        module,
+        main: 'Unknown evidence',
+        source: data.source || 'unknown',
+        detail: data.evidence || '',
+      };
+    }
+
+    function renderEvidence() {
+      const evidenceEl = document.getElementById('evidence-list');
+      if (state.activeTab !== 'overview') return;
+      if (!state.evidence.length) {
+        evidenceEl.innerHTML = '<div class="empty-state">No evidence yet &mdash; launch scan</div>';
+        return;
+      }
+
+      evidenceEl.innerHTML = state.evidence.slice(0, 12).map((entry) => `
+        <div class="evidence-item">
+          <div class="evidence-head">
+            <span class="evidence-module ${entry.module}">${entry.module.toUpperCase()}</span>
+            <span class="evidence-source">${entry.source}</span>
+          </div>
+          <div class="evidence-main">${entry.main}</div>
+          <div class="evidence-detail">${entry.detail}</div>
+          <div style="margin-top:8px;">
+            <button class="copy-btn" data-proof="${encodeURIComponent(`Module: ${entry.module}\nSource: ${entry.source}\nMain: ${entry.main}\nDetail: ${entry.detail}`)}" onclick="copyProofFromAttr(this)">COPY PROOF</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    const API_BASE = window.location.protocol === 'file:' ? 'http://localhost:8000' : window.location.origin;
+    state.moduleSignals = { subdomain: 0, dns: 0, port: 0, fingerprint: 0, js: 0, url_intel: 0, dir: 0 };
+
+    function setProgress(module, pct) {
+      const barEl = document.getElementById('bar-' + module);
+      const pctEl = document.getElementById('pct-' + module);
+      if (barEl) barEl.style.width = pct + '%';
+      if (pctEl) pctEl.textContent = pct + '%';
+    }
+
+    function setDot(module, stateValue) {
+      const dot = document.getElementById('dot-' + module);
+      if (!dot) return;
+      dot.className = 'module-status-dot dot-' + stateValue;
+    }
+
+    function setSystemStatus(label, dotState = 'ready') {
+      const sysDot = document.getElementById('sys-dot');
+      sysDot.className = 'status-dot';
+      if (dotState === 'idle') sysDot.classList.add('idle');
+      if (dotState === 'error') sysDot.classList.add('error');
+      document.getElementById('sys-status').textContent = label;
+    }
+
+    function resetResults() {
+      state.subdomains = [];
+      state.dnsRecords = [];
+      state.ports = [];
+      state.fingerprints = [];
+      state.jsFindings = [];
+      state.urlIntel = [];
+      state.dirs = [];
+      state.evidence = [];
+      state.currentScanId = null;
+      state.triageStatuses = {};
+      state.moduleStats.js.analyzed = 0;
+      state.pendingRenders = createPendingRenderState();
+      state.renderScheduled = false;
+      renderSubdomains();
+      renderPorts();
+      renderJS();
+      renderDirs();
+      renderEvidence();
+      renderExposedKeys();
+      renderTriage();
+      updateStats();
+    }
+
+    function resetModuleUi() {
+      Object.keys(state.modules).forEach((module) => {
+        state.moduleSignals[module] = 0;
+        setProgress(module, 0);
+        const pctEl = document.getElementById('pct-' + module);
+        if (pctEl) pctEl.textContent = state.modules[module] ? '0%' : 'OFF';
+        setDot(module, 'waiting');
+      });
+    }
+
+    function setLaunchButton(running) {
+      const btn = document.getElementById('launch-btn');
+      btn.textContent = running ? 'SCANNING...' : 'RELAUNCH RECON';
+      btn.classList.toggle('running', running);
+    }
+
+    function applyCompletedModuleUi(enabledModules = state.modules) {
+      Object.keys(state.modules).forEach((module) => {
+        const enabled = !!enabledModules[module];
+        if (!enabled) {
+          setProgress(module, 0);
+          const pctEl = document.getElementById('pct-' + module);
+          if (pctEl) pctEl.textContent = 'OFF';
+          setDot(module, 'waiting');
+          return;
+        }
+
+        setProgress(module, 100);
+        const pctEl = document.getElementById('pct-' + module);
+        if (pctEl) pctEl.textContent = '100%';
+        setDot(module, 'done');
+      });
+    }
+
+    function applySavedScanRecord(record) {
+      const results = record.results || {};
+      state.running = false;
+      state.abortController = null;
+      state.abortReason = null;
+      state.currentScanId = record.scan_id || null;
+      state.subdomains = results.subdomains || [];
+      state.dnsRecords = results.dns_records || [];
+      state.ports = results.ports || [];
+      state.fingerprints = results.fingerprints || [];
+      state.jsFindings = results.js_findings || [];
+      state.urlIntel = results.url_intel || [];
+      state.dirs = results.directories || [];
+      state.evidence = record.evidence || [];
+      state.logs = record.logs || [];
+      state.moduleStats.js.analyzed = (record.summary && record.summary.js_scanned) || 0;
+      state.modules = { ...state.modules, ...(record.modules_enabled || {}) };
+
+      document.getElementById('target-input').value = record.target || '';
+      document.getElementById('session-id').textContent = record.session_id || generateSessionId();
+      setScanMode(record.scan_mode || 'balanced');
+      loadTriageState();
+      syncModuleToggles();
+      renderTerminalFromState();
+      applyCompletedModuleUi(record.modules_enabled || state.modules);
+      renderSubdomains();
+      renderPorts();
+      renderJS();
+      renderDirs();
+      renderEvidence();
+      renderExposedKeys();
+      renderTriage();
+      renderHistory();
+      updateCriticalAlert();
+      updateStats();
+      setLaunchButton(false);
+      setSystemStatus('HISTORY LOADED', 'idle');
+      document.getElementById('scan-time-label').textContent = 'DONE';
+      switchTab('overview', document.querySelector('.nav-item'));
+    }
+
+    async function loadHistory(silent = false) {
+      try {
+        const response = await fetch(`${API_BASE}/history?limit=30`);
+        if (!response.ok) throw new Error(`History request failed with ${response.status}`);
+        const payload = await response.json();
+        state.history = payload.items || [];
+        const availableIds = new Set(state.history.map((item) => item.scan_id));
+        if (state.compare.leftId && !availableIds.has(state.compare.leftId)) {
+          state.compare.leftId = null;
+          state.compare.data = null;
+        }
+        if (state.compare.rightId && !availableIds.has(state.compare.rightId)) {
+          state.compare.rightId = null;
+          state.compare.data = null;
+        }
+        scheduleRender('history', 'compare', 'stats');
+      } catch (error) {
+        if (!silent) {
+          log('system', `Unable to load saved history: ${error.message}`, 'warn');
+        }
+      }
+    }
+
+    function selectHistoryCompare(side, scanId) {
+      if (!['left', 'right'].includes(side)) return;
+      if (!scanId) return;
+
+      const otherSide = side === 'left' ? 'right' : 'left';
+      const slotKey = `${side}Id`;
+      const otherKey = `${otherSide}Id`;
+      state.compare[slotKey] = scanId;
+
+      if (state.compare[otherKey] === scanId) {
+        state.compare[otherKey] = null;
+      }
+
+      state.compare.data = null;
+      scheduleRender('history', 'compare');
+    }
+
+    function clearHistoryCompare() {
+      state.compare.leftId = null;
+      state.compare.rightId = null;
+      state.compare.data = null;
+      state.compare.loading = false;
+      scheduleRender('history', 'compare');
+    }
+
+    function swapHistoryCompare() {
+      const previousLeft = state.compare.leftId;
+      state.compare.leftId = state.compare.rightId;
+      state.compare.rightId = previousLeft;
+      state.compare.data = null;
+      scheduleRender('history', 'compare');
+    }
+
+    async function runHistoryCompare() {
+      if (!state.compare.leftId || !state.compare.rightId) {
+        log('system', 'Pick two saved scans before running compare.', 'warn');
+        return;
+      }
+
+      if (state.compare.leftId === state.compare.rightId) {
+        log('system', 'Choose two different saved scans to compare.', 'warn');
+        return;
+      }
+
+      state.compare.loading = true;
+      state.compare.data = null;
+      scheduleRender('history', 'compare');
+
+      try {
+        const response = await fetch(
+          `${API_BASE}/history/compare?left_scan_id=${encodeURIComponent(state.compare.leftId)}&right_scan_id=${encodeURIComponent(state.compare.rightId)}`
+        );
+        if (!response.ok) throw new Error(`Compare request failed with ${response.status}`);
+        state.compare.data = await response.json();
+        const leftTarget = state.compare.data.left && state.compare.data.left.target ? state.compare.data.left.target : state.compare.leftId;
+        const rightTarget = state.compare.data.right && state.compare.data.right.target ? state.compare.data.right.target : state.compare.rightId;
+        log('system', `Compared saved scans: ${leftTarget} -> ${rightTarget}.`, 'success');
+      } catch (error) {
+        log('system', `Unable to compare saved scans: ${error.message}`, 'error');
+      } finally {
+        state.compare.loading = false;
+        scheduleRender('history', 'compare');
+      }
+    }
+
+    async function loadSavedScan(scanId) {
+      try {
+        const response = await fetch(`${API_BASE}/history/${encodeURIComponent(scanId)}`);
+        if (!response.ok) throw new Error(`Saved scan request failed with ${response.status}`);
+        const record = await response.json();
+        applySavedScanRecord(record);
+        log('system', `Loaded saved scan ${scanId} for ${record.target}.`, 'success');
+      } catch (error) {
+        log('system', `Unable to load saved scan ${scanId}: ${error.message}`, 'error');
+      }
+    }
+
+    function downloadSavedReport(scanId, format = 'json') {
+      const link = document.createElement('a');
+      const suffix = format === 'json' ? '/report' : `/report.${format}`;
+      link.href = `${API_BASE}/history/${encodeURIComponent(scanId)}${suffix}`;
+      link.download = '';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    }
+
+    function buildSummary() {
+      const triageFindings = getAllTriageFindings();
+      return {
+        subdomains: state.subdomains.length,
+        live_subdomains: state.subdomains.filter((item) => item.status === 'live').length,
+        dns_records: state.dnsRecords.length,
+        ports: state.ports.length,
+        critical_ports: state.ports.filter((item) => item.critical).length,
+        fingerprints: state.fingerprints.length,
+        js_findings: state.jsFindings.length,
+        high_js_findings: state.jsFindings.filter((item) => item.severity === 'high' || item.severity === 'critical').length,
+        js_scanned: state.moduleStats.js.analyzed || 0,
+        url_intel: state.urlIntel.length,
+        exposed_keys: getExposedKeys().length,
+        dirs: state.dirs.length,
+        ok_dirs: state.dirs.filter((item) => item.code === 200).length,
+        triage_total: triageFindings.length,
+        triage_validated: triageFindings.filter((item) => item.status === 'validated').length,
+        triage_interesting: triageFindings.filter((item) => item.status === 'interesting').length,
+        triage_false_positive: triageFindings.filter((item) => item.status === 'false_positive').length,
+      };
+    }
+
+    function downloadFile(filename, content, mimeType) {
+      const blob = new Blob([content], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function exportReport() {
+      const hasData = state.subdomains.length || state.dnsRecords.length || state.ports.length || state.fingerprints.length || state.jsFindings.length || state.urlIntel.length || state.dirs.length || state.evidence.length;
+      if (!hasData) {
+        log('system', 'No scan results to export yet.', 'warn');
+        return;
+      }
+
+      const target = document.getElementById('target-input').value.trim() || 'untitled-target';
+      const safeTarget = target.replace(/[^a-z0-9.-]+/gi, '-').replace(/^-+|-+$/g, '') || 'untitled-target';
+      const report = {
+        scan_id: state.currentScanId,
+        session_id: document.getElementById('session-id').textContent,
+        target,
+        scan_mode: state.scanMode,
+        exported_at: new Date().toISOString(),
+        api_base: API_BASE,
+        scan_running: state.running,
+        redaction_policy: 'Sensitive key-like values are redacted in JS findings and exposed key candidates.',
+        modules_enabled: { ...state.modules },
+        summary: buildSummary(),
+        results: {
+          subdomains: state.subdomains,
+          dns_records: state.dnsRecords,
+          ports: state.ports,
+          fingerprints: state.fingerprints,
+          js_findings: state.jsFindings,
+          url_intel: state.urlIntel,
+          exposed_keys: getExposedKeys(),
+          directories: state.dirs,
+        },
+        triage: {
+          filters: { ...state.triageFilters },
+          statuses: { ...state.triageStatuses },
+          findings: getAllTriageFindings(),
+        },
+        evidence: state.evidence,
+        logs: state.logs,
+      };
+
+      downloadFile(
+        `recon-report-${safeTarget}-${Date.now()}.json`,
+        JSON.stringify(report, null, 2),
+        'application/json'
+      );
+      log('system', `Exported report for ${target}.`, 'success');
+    }
+
+    function clearSession() {
+      if (state.abortController) {
+        state.abortReason = 'session-clear';
+        state.abortController.abort();
+      }
+
+      state.running = false;
+      updateCriticalAlert();
+      resetResults();
+      resetModuleUi();
+      clearTerminal();
+      setLaunchButton(false);
+      setSystemStatus('SYSTEM READY');
+      document.getElementById('scan-time-label').textContent = 'IDLE';
+      document.getElementById('alert-banner').style.display = 'none';
+      document.getElementById('alert-text').textContent = '';
+      refreshSessionId();
+      switchTab('overview', document.querySelector('.nav-item'));
+      log('system', 'Session cleared. Ready for a new scan.', 'dim');
+    }
+
+    function updateCriticalAlert() {
+      const critical = state.ports.filter((port) => port.critical);
+      const alertBanner = document.getElementById('alert-banner');
+      const alertText = document.getElementById('alert-text');
+
+      if (!critical.length) {
+        alertBanner.style.display = 'none';
+        alertText.textContent = '';
+        return;
+      }
+
+      alertBanner.style.display = 'flex';
+      alertText.textContent = `Critical exposed services detected: ${critical.map((port) => `${port.service}:${port.port}`).join(', ')}`;
+    }
+
+    function bumpModuleProgress(module, eventType) {
+      if (!state.modules[module]) return;
+      if (!document.getElementById('bar-' + module)) return;
+
+      if (eventType === 'done') {
+        setProgress(module, 100);
+        setDot(module, 'done');
+        return;
+      }
+
+      state.moduleSignals[module] = (state.moduleSignals[module] || 0) + 1;
+      const pct = Math.min(90, state.moduleSignals[module] * 12);
+      setProgress(module, pct);
+      setDot(module, 'running');
+    }
+
+    function addModuleResult(module, data) {
+      if (module === 'subdomain') {
+        state.subdomains.push(data);
+        scheduleRender('subdomains', 'evidence', 'triage', 'stats');
+      } else if (module === 'dns') {
+        state.dnsRecords.push(data);
+        scheduleRender('evidence', 'triage', 'stats');
+      } else if (module === 'port') {
+        state.ports.push(data);
+        scheduleRender('ports', 'evidence', 'triage', 'stats', 'criticalAlert');
+      } else if (module === 'fingerprint') {
+        state.fingerprints.push(data);
+        scheduleRender('evidence', 'triage', 'stats');
+      } else if (module === 'js') {
+        state.jsFindings.push(data);
+        scheduleRender('js', 'evidence', 'exposedKeys', 'triage', 'stats');
+      } else if (module === 'url_intel') {
+        state.urlIntel.push(data);
+        scheduleRender('evidence', 'triage', 'stats');
+      } else if (module === 'dir') {
+        state.dirs.push(data);
+        scheduleRender('dirs', 'evidence', 'triage', 'stats');
+      }
+
+      state.evidence.unshift(buildEvidenceEntry(module, data));
+      state.evidence = state.evidence.slice(0, 50);
+      if (module !== 'subdomain' && module !== 'port' && module !== 'js' && module !== 'dir') {
+        scheduleRender('evidence', 'exposedKeys', 'triage', 'stats');
+      }
+    }
+
+    function parseSseEvent(chunk) {
+      const dataLines = chunk
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trimStart());
+
+      if (!dataLines.length) return null;
+
+      try {
+        return JSON.parse(dataLines.join('\n'));
+      } catch (error) {
+        console.error('Failed to parse SSE event', error, chunk);
+        return null;
+      }
+    }
+
+    async function readScanStream(response) {
+      if (!response.body) {
+        throw new Error('Streaming is not supported in this browser.');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+        const parts = buffer.split(/\r?\n\r?\n/);
+        buffer = parts.pop() || '';
+
+        for (const part of parts) {
+          const event = parseSseEvent(part);
+          if (event) handleScanEvent(event);
+        }
+
+        if (done) break;
+      }
+
+      if (buffer.trim()) {
+        const event = parseSseEvent(buffer);
+        if (event) handleScanEvent(event);
+      }
+    }
+
+    function handleScanEvent(event) {
+      if (event.type === 'start') {
+        state.currentScanId = event.scan_id || null;
+        if (event.session_id) {
+          document.getElementById('session-id').textContent = event.session_id;
+        }
+        if (event.scan_mode) {
+          setScanMode(event.scan_mode);
+        }
+        clearTerminal();
+        log('system', `Initializing recon against: ${event.target}`, '');
+        log('system', `Streaming from API: ${API_BASE}`, 'dim');
+        if (event.profile) {
+          log('system', `Profile: ${String(event.profile.mode || event.scan_mode || 'balanced').toUpperCase()} | Ports: ${event.profile.ports}`, 'dim');
+        }
+        return;
+      }
+
+      if (event.type === 'error') {
+        if (event.module && state.modules[event.module]) {
+          setDot(event.module, 'error');
+          const pctEl = document.getElementById('pct-' + event.module);
+          if (pctEl) pctEl.textContent = 'ERR';
+        }
+
+        if (event.msg) {
+          log(event.module || 'system', event.msg, event.level || 'error');
+        }
+        return;
+      }
+
+      if (event.type === 'fatal') {
+        state.running = false;
+        state.abortController = null;
+        state.abortReason = null;
+        setLaunchButton(false);
+        setSystemStatus('SCAN FAILED', 'error');
+        document.getElementById('scan-time-label').textContent = 'ERROR';
+        log('system', event.msg || 'Scan worker failed.', event.level || 'error');
+        return;
+      }
+
+      if (event.type === 'complete') {
+        flushPendingRenders();
+        state.currentScanId = event.scan_id || state.currentScanId;
+        loadTriageState();
+        log('system', `Recon complete. Summary: ${event.summary.subdomains} subdomains, ${event.summary.dns_records || 0} DNS, ${event.summary.ports} ports, ${event.summary.fingerprints || 0} fingerprints, ${event.summary.js_findings} JS findings, ${event.summary.url_intel || 0} URL intel, ${event.summary.dirs} directories.`, 'success');
+        state.running = false;
+        state.abortController = null;
+        state.abortReason = null;
+        setLaunchButton(false);
+        setSystemStatus('SCAN COMPLETE', 'idle');
+        document.getElementById('scan-time-label').textContent = 'DONE';
+        if (event.saved) {
+          loadHistory(true);
+        }
+        return;
+      }
+
+      if (!event.module) return;
+
+      if (event.type === 'progress' && typeof event.progress === 'number') {
+        if (document.getElementById('bar-' + event.module)) {
+          setProgress(event.module, event.progress);
+          if (event.progress < 100) setDot(event.module, 'running');
+        }
+        if (event.msg) {
+          log(event.module, event.msg, event.level || '');
+        }
+        return;
+      }
+
+      if (event.type === 'done' && event.module === 'js' && typeof event.analyzed === 'number') {
+        state.moduleStats.js.analyzed = event.analyzed;
+        scheduleRender('js', 'triage', 'stats', 'exposedKeys');
+      }
+
+      bumpModuleProgress(event.module, event.type);
+
+      if (event.msg) {
+        log(event.module, event.msg, event.level || '');
+      }
+
+      if (event.type === 'result' && event.data) {
+        addModuleResult(event.module, event.data);
+      }
+    }
+
+    async function checkBackendHealth() {
+      try {
+        const response = await fetch(`${API_BASE}/health`);
+        if (!response.ok) throw new Error(`Health check failed with ${response.status}`);
+
+        const health = await response.json();
+        const availableTools = Object.entries(health.tools)
+          .filter(([, available]) => available)
+          .map(([tool]) => tool);
+
+        setSystemStatus('API ONLINE');
+        log('system', `Backend reachable at ${API_BASE}`, 'success');
+        log('system', `Detected tools: ${availableTools.length ? availableTools.join(', ') : 'none'}`, 'dim');
+        loadHistory(true);
+      } catch (error) {
+        setSystemStatus('API OFFLINE', 'error');
+        log('system', `Backend unavailable at ${API_BASE}. Start the FastAPI server first.`, 'warn');
+      }
+    }
+
+    async function launchScan() {
+      const target = document.getElementById('target-input').value.trim();
+      if (!target) {
+        document.getElementById('target-input').focus();
+        log('system', 'ERROR: No target specified', 'error');
+        return;
+      }
+
+      if (!Object.values(state.modules).some(Boolean)) {
+        log('system', 'ERROR: Select at least one module before launching.', 'error');
+        return;
+      }
+
+      if (state.running) return;
+
+      setScanMode(document.getElementById('scan-mode-select').value);
+      state.running = true;
+      state.abortReason = null;
+      resetResults();
+      resetModuleUi();
+      updateCriticalAlert();
+      setLaunchButton(true);
+      setSystemStatus('SCANNING');
+      document.getElementById('scan-time-label').textContent = 'RUNNING';
+      document.getElementById('alert-banner').style.display = 'none';
+
+      const controller = new AbortController();
+      state.abortController = controller;
+
+      try {
+        const response = await fetch(`${API_BASE}/scan`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            target,
+            modules: state.modules,
+            scan_mode: state.scanMode,
+            session_id: document.getElementById('session-id').textContent,
+          }),
+        });
+
+        if (!response.ok) {
+          let message = `Scan request failed with ${response.status}`;
+
+          try {
+            const errorBody = await response.json();
+            if (errorBody.detail) message = errorBody.detail;
+          } catch (parseError) {
+            const text = await response.text();
+            if (text) message = text;
+          }
+
+          throw new Error(message);
+        }
+
+        await readScanStream(response);
+        flushPendingRenders();
+      } catch (error) {
+        if (error.name === 'AbortError' && state.abortReason === 'session-clear') {
+          state.abortReason = null;
+          return;
+        }
+
+        state.running = false;
+        state.abortReason = null;
+        setLaunchButton(false);
+        setSystemStatus('SCAN FAILED', 'error');
+        document.getElementById('scan-time-label').textContent = 'ERROR';
+        log('system', `Scan failed: ${error.message}`, 'error');
+      } finally {
+        if (state.abortController === controller) {
+          state.abortController = null;
+        }
+      }
+    }
+
+    // Init
+    document.querySelector('.nav-item').classList.add('active');
+    setScanMode('balanced');
+    syncModuleToggles();
+    refreshSessionId();
+    resetResults();
+    resetModuleUi();
+    checkBackendHealth();
+  </script>
+</body>
+</html>
