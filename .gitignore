@@ -12,6 +12,9 @@ tests/__pycache__/
 
 .vscode/
 .git_publish/
+.chrome-shot-profile/
+.chrome-shot-profile-1/
+.chrome-shot-profile-2/
 
 *.db
 *.db-journal
