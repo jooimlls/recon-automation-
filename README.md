@@ -4,9 +4,7 @@ Bug bounty recon automation platform with a FastAPI backend, real tool integrati
 
 ## Preview
 
-![Dashboard overview](docs/images/dashboard-overview.png)
-
-![FastAPI docs](docs/images/api-docs.png)
+![Dashboard overview](docs/images/dashboard-preview-file.png)
 
 ## What It Does
 
