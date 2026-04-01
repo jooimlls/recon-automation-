@@ -144,8 +144,8 @@ if ($SkipInstall) {
     Write-WarnText "  Skipping dependency installation because -SkipInstall was provided."
 }
 else {
-    Invoke-Python -PythonCommand $pythonCommand -Arguments @("-m", "pip", "install", "fastapi", "uvicorn")
-    Write-Host "  [OK] FastAPI and Uvicorn installed" -ForegroundColor Green
+    Invoke-Python -PythonCommand $pythonCommand -Arguments @("-m", "pip", "install", "django", "uvicorn", "pydantic")
+    Write-Host "  [OK] Django, SQLite3 support, Uvicorn, and backend dependencies installed" -ForegroundColor Green
 }
 
 Write-Host ""
@@ -169,7 +169,7 @@ else {
 }
 
 Write-Host ""
-Write-Section "[4/4] Starting RECON//OS API..."
+Write-Section "[4/4] Starting RECON//OS Django server..."
 Write-Host ""
 Write-Host "  API:       http://localhost:8000" -ForegroundColor Green
 Write-Host "  Docs:      http://localhost:8000/docs" -ForegroundColor Green
@@ -183,4 +183,4 @@ if ($NoLaunch) {
     exit 0
 }
 
-Invoke-Python -PythonCommand $pythonCommand -Arguments @("-m", "uvicorn", "recon_api:app", "--host", "0.0.0.0", "--port", "8000")
+Invoke-Python -PythonCommand $pythonCommand -Arguments @("-m", "uvicorn", "reconsite.asgi:application", "--host", "127.0.0.1", "--port", "8000")

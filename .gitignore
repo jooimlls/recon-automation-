@@ -15,9 +15,11 @@ tests/__pycache__/
 .chrome-shot-profile/
 .chrome-shot-profile-1/
 .chrome-shot-profile-2/
+.env
 
 *.db
 *.db-journal
+db.sqlite3
 sqlite_probe.txt
 
 wordlists/

@@ -19,8 +19,8 @@ echo ""
 
 # ── Python deps ──
 echo -e "${GREEN}[1/4]${NC} Installing Python dependencies..."
-pip install fastapi uvicorn 2>/dev/null || pip3 install fastapi uvicorn
-echo -e "  ✓ FastAPI, Uvicorn installed"
+pip install django uvicorn pydantic 2>/dev/null || pip3 install django uvicorn pydantic
+echo -e "  ✓ Django, FastAPI compatibility libs, Uvicorn installed"
 
 # ── Check Go tools ──
 echo ""
@@ -65,7 +65,7 @@ fi
 
 # ── Launch ──
 echo ""
-echo -e "${GREEN}[4/4]${NC} Starting RECON//OS API..."
+echo -e "${GREEN}[4/4]${NC} Starting RECON//OS Django server..."
 echo ""
 echo -e "  ${GREEN}►${NC} API:       http://localhost:8000"
 echo -e "  ${GREEN}►${NC} Docs:      http://localhost:8000/docs"
@@ -74,4 +74,4 @@ echo ""
 echo -e "${YELLOW}  TIP:${NC} Only scan targets you own or have written permission to test."
 echo ""
 
-uvicorn recon_api:app --host 0.0.0.0 --port 8000 --reload
+uvicorn reconsite.asgi:application --host 127.0.0.1 --port 8000

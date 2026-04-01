@@ -1,20 +1,4 @@
-"""
-RECON//OS - Python FastAPI Backend
-Real bug bounty recon automation API
-
-Requirements:
-    pip install fastapi uvicorn
-
-External tools (install separately):
-    - subfinder:   go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
-    - httpx:       go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
-    - nmap:        install separately for your OS
-    - ffuf:        go install github.com/ffuf/ffuf/v2@latest
-    - gau:         go install github.com/lc/gau/v2/cmd/gau@latest
-
-Run with:
-    uvicorn recon_api:app --host 0.0.0.0 --port 8000
-"""
+"""RECON//OS scan engine and helper utilities for the Django app."""
 
 import asyncio
 import functools
@@ -29,6 +13,7 @@ import sqlite3
 import ssl
 import subprocess
 import tempfile
+import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -37,20 +22,7 @@ from urllib import error as urllib_error
 from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel
-
-app = FastAPI(title="RECON//OS API", version="2.4.1")
-
-# Allow the HTML dashboard to call this API from any origin (localhost dev)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 
 # Models
@@ -79,6 +51,9 @@ scan_workers_started = False
 scan_worker_task: Optional[asyncio.Task[Any]] = None
 scan_worker_loop: Optional[asyncio.AbstractEventLoop] = None
 last_scan_times: dict[str, datetime] = {}
+history_db_lock = threading.Lock()
+history_db_connection: Optional[sqlite3.Connection] = None
+history_db_backend = "file"
 
 
 # Helpers
@@ -236,7 +211,41 @@ def dashboard_path() -> Path:
     return Path(__file__).with_name("recon.html")
 
 
-HISTORY_DB_PATH = Path(__file__).with_name("recon_scans.db")
+HISTORY_DB_PATH = Path(__file__).with_name("db.sqlite3")
+HISTORY_DB_MEMORY_URI = "file:recon_history_runtime?mode=memory&cache=shared"
+
+
+
+def _get_django_saved_scan_model():
+    if not env_flag("RECON_USE_DJANGO_ORM", False):
+        return None
+    try:
+        from django.apps import apps
+
+        if not apps.ready:
+            return None
+        return apps.get_model("reconweb", "SavedScan")
+    except Exception:
+        return None
+
+
+def _record_from_model(instance) -> dict:
+    return {
+        "scan_id": instance.scan_id,
+        "session_id": instance.session_id,
+        "target": instance.target,
+        "scan_mode": instance.scan_mode,
+        "status": instance.status,
+        "started_at": instance.started_at,
+        "completed_at": instance.completed_at,
+        "modules_enabled": instance.modules_enabled or {},
+        "profile": instance.profile or {},
+        "summary": instance.summary or {},
+        "results": instance.results or {},
+        "evidence": instance.evidence or [],
+        "logs": instance.logs or [],
+        "redaction_policy": instance.redaction_policy or "",
+    }
 
 DEFAULT_MODULES = {
     "subdomain": True,
@@ -368,12 +377,26 @@ def profile_summary(profile: dict) -> dict:
 
 
 def _open_history_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(HISTORY_DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=MEMORY")
-    conn.execute("PRAGMA synchronous=NORMAL")
-    conn.execute("PRAGMA temp_store=MEMORY")
-    return conn
+    global history_db_backend, history_db_connection
+
+    if history_db_connection is None:
+        try:
+            conn = sqlite3.connect(HISTORY_DB_PATH, check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA journal_mode=OFF")
+            conn.execute("PRAGMA synchronous=OFF")
+            conn.execute("PRAGMA temp_store=MEMORY")
+            history_db_connection = conn
+            history_db_backend = "file"
+        except sqlite3.OperationalError:
+            conn = sqlite3.connect(HISTORY_DB_MEMORY_URI, uri=True, check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA synchronous=OFF")
+            conn.execute("PRAGMA temp_store=MEMORY")
+            history_db_connection = conn
+            history_db_backend = "memory"
+
+    return history_db_connection
 
 
 def get_db_connection(reset_if_needed: bool = False) -> sqlite3.Connection:
@@ -382,25 +405,13 @@ def get_db_connection(reset_if_needed: bool = False) -> sqlite3.Connection:
     except sqlite3.OperationalError:
         if not reset_if_needed:
             raise
-
-        if HISTORY_DB_PATH.exists():
-            backup_name = HISTORY_DB_PATH.with_name(
-                f"{HISTORY_DB_PATH.stem}.broken-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}{HISTORY_DB_PATH.suffix}"
-            )
-            try:
-                HISTORY_DB_PATH.replace(backup_name)
-            except OSError:
-                HISTORY_DB_PATH.unlink(missing_ok=True)
-
-        journal_path = Path(str(HISTORY_DB_PATH) + "-journal")
-        if journal_path.exists():
-            journal_path.unlink(missing_ok=True)
-
         return _open_history_connection()
 
 
 def init_history_db() -> None:
-    with get_db_connection(reset_if_needed=True) as conn:
+    if _get_django_saved_scan_model() is not None:
+        return
+    with history_db_lock, get_db_connection(reset_if_needed=True) as conn:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS scans (
@@ -432,7 +443,32 @@ def deserialize_json(value: Optional[str], default):
 
 
 def save_scan_record(record: dict) -> None:
-    with get_db_connection() as conn:
+    SavedScan = _get_django_saved_scan_model()
+    if SavedScan is not None:
+        try:
+            SavedScan.objects.update_or_create(
+                scan_id=record["scan_id"],
+                defaults={
+                    "session_id": record.get("session_id", ""),
+                    "target": record["target"],
+                    "scan_mode": record["scan_mode"],
+                    "status": record["status"],
+                    "started_at": record["started_at"],
+                    "completed_at": record.get("completed_at"),
+                    "modules_enabled": record.get("modules_enabled", {}),
+                    "profile": record.get("profile", {}),
+                    "summary": record.get("summary", {}),
+                    "results": record.get("results", {}),
+                    "evidence": record.get("evidence", []),
+                    "logs": record.get("logs", []),
+                    "redaction_policy": record.get("redaction_policy", ""),
+                },
+            )
+            return
+        except Exception:
+            pass
+
+    with history_db_lock, get_db_connection() as conn:
         conn.execute(
             """
             INSERT OR REPLACE INTO scans (
@@ -471,7 +507,38 @@ def save_scan_record(record: dict) -> None:
 
 def list_scan_records(limit: int = 25) -> list[dict]:
     safe_limit = max(1, min(limit, 100))
-    with get_db_connection() as conn:
+    SavedScan = _get_django_saved_scan_model()
+    if SavedScan is not None:
+        try:
+            rows = list(
+                SavedScan.objects.order_by("-started_at").values(
+                    "scan_id",
+                    "session_id",
+                    "target",
+                    "scan_mode",
+                    "status",
+                    "started_at",
+                    "completed_at",
+                    "summary",
+                )[:safe_limit]
+            )
+            return [
+                {
+                    "scan_id": row["scan_id"],
+                    "session_id": row["session_id"],
+                    "target": row["target"],
+                    "scan_mode": row["scan_mode"],
+                    "status": row["status"],
+                    "started_at": row["started_at"],
+                    "completed_at": row["completed_at"],
+                    "summary": row.get("summary") or {},
+                }
+                for row in rows
+            ]
+        except Exception:
+            pass
+
+    with history_db_lock, get_db_connection() as conn:
         rows = conn.execute(
             """
             SELECT scan_id, session_id, target, scan_mode, status, started_at, completed_at, summary_json
@@ -500,7 +567,16 @@ def list_scan_records(limit: int = 25) -> list[dict]:
 
 
 def get_scan_record(scan_id: str) -> Optional[dict]:
-    with get_db_connection() as conn:
+    SavedScan = _get_django_saved_scan_model()
+    if SavedScan is not None:
+        try:
+            instance = SavedScan.objects.filter(scan_id=scan_id).first()
+            if instance:
+                return _record_from_model(instance)
+        except Exception:
+            pass
+
+    with history_db_lock, get_db_connection() as conn:
         row = conn.execute("SELECT * FROM scans WHERE scan_id = ?", (scan_id,)).fetchone()
 
     if not row:
@@ -2536,216 +2612,7 @@ def build_html_report(record: dict) -> str:
 </body>
 </html>"""
 
-@app.get("/", include_in_schema=False)
-async def dashboard():
-    path = dashboard_path()
-    if not path.exists():
-        raise HTTPException(404, "Dashboard file not found")
-    return FileResponse(path)
-
-
-@app.on_event("startup")
-async def startup_event():
-    await ensure_scan_workers()
-
-
-@app.post("/scan")
-async def start_scan(req: ScanRequest):
-    target = normalize_target_input(req.target)
-    if not target or not re.match(r"^[a-z0-9\-\.]+\.[a-z]{2,}$", target):
-        raise HTTPException(400, "Invalid target domain")
-    scope_error = validate_target_scope(target)
-    if scope_error:
-        raise HTTPException(400, scope_error)
-
-    await ensure_scan_workers()
-    assert scan_job_queue is not None
-
-    modules = merge_requested_modules(req.modules)
-    profile = resolve_scan_profile(req.scan_mode, req.ports)
-    now = datetime.utcnow()
-    last_started = last_scan_times.get(target)
-    min_gap = APP_SETTINGS["min_seconds_between_scans"]
-    if last_started and (now - last_started).total_seconds() < min_gap:
-        raise HTTPException(429, f"Rate limit active for {target}. Wait a few seconds and try again.")
-
-    queued_jobs = sum(1 for item in scans.values() if item.get("status") in {"queued", "running"})
-    if queued_jobs >= APP_SETTINGS["max_pending_jobs"]:
-        raise HTTPException(429, "Scan queue is full. Wait for running jobs to finish.")
-
-    scan_id = uuid.uuid4().hex[:12]
-    session_id = req.session_id or scan_id
-    job = {
-        "scan_id": scan_id,
-        "session_id": session_id,
-        "target": target,
-        "profile": profile,
-        "modules": modules,
-        "wordlist": req.wordlist,
-        "status": "queued",
-        "started_at": now.isoformat(),
-        "queue": asyncio.Queue(),
-        "completed": False,
-        "summary": None,
-        "report": None,
-    }
-    scans[scan_id] = job
-    last_scan_times[target] = now
-    await scan_job_queue.put(scan_id)
-
-    async def event_stream():
-        while True:
-            try:
-                event = await asyncio.wait_for(job["queue"].get(), timeout=1)
-            except asyncio.TimeoutError:
-                if job.get("completed"):
-                    terminal_type = "complete" if str(job.get("status", "")).startswith("completed") else "fatal"
-                    terminal_event = {
-                        "type": terminal_type,
-                        "scan_id": scan_id,
-                        "session_id": session_id,
-                        "scan_mode": profile["mode"],
-                        "summary": job.get("summary"),
-                        "saved": bool(job.get("report")),
-                        "time": datetime.utcnow().isoformat(),
-                    }
-                    yield sse_event(terminal_event)
-                    break
-                if scan_worker_task is None or scan_worker_task.done():
-                    job["status"] = "failed"
-                    job["completed"] = True
-                    yield sse_event({
-                        "type": "fatal",
-                        "scan_id": scan_id,
-                        "session_id": session_id,
-                        "msg": "Scan worker stopped before the job produced a terminal event.",
-                        "level": "error",
-                        "time": datetime.utcnow().isoformat(),
-                    })
-                    break
-                continue
-            yield sse_event(event)
-            if event.get("type") in {"complete", "fatal"}:
-                break
-
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-@app.get("/scans/{scan_id}")
-def scan_status(scan_id: str):
-    job = scans.get(scan_id)
-    if not job:
-        raise HTTPException(404, "Scan job not found")
-    return {
-        "scan_id": job["scan_id"],
-        "session_id": job["session_id"],
-        "target": job["target"],
-        "status": job["status"],
-        "started_at": job["started_at"],
-        "summary": job.get("summary"),
-        "completed": bool(job.get("completed")),
-    }
-
-
-@app.get("/history")
-def history(limit: int = 25):
-    return {"items": list_scan_records(limit=limit)}
-
-
-@app.get("/history/compare")
-def history_compare(left_scan_id: str, right_scan_id: str):
-    if left_scan_id == right_scan_id:
-        raise HTTPException(400, "Choose two different saved scans to compare")
-
-    left_record = get_scan_record(left_scan_id)
-    right_record = get_scan_record(right_scan_id)
-    if not left_record or not right_record:
-        raise HTTPException(404, "One or both saved scans were not found")
-
-    return build_history_compare(left_record, right_record)
-
-
-@app.get("/history/{scan_id}")
-def history_detail(scan_id: str):
-    record = get_scan_record(scan_id)
-    if not record:
-        raise HTTPException(404, "Saved scan not found")
-    return record
-
-
-@app.get("/history/{scan_id}/report")
-def history_report(scan_id: str):
-    record = get_scan_record(scan_id)
-    if not record:
-        raise HTTPException(404, "Saved scan not found")
-
-    filename_target = re.sub(r"[^a-z0-9.-]+", "-", record["target"]).strip("-") or "target"
-    return Response(
-        content=json.dumps(record, indent=2),
-        media_type="application/json",
-        headers={
-            "Content-Disposition": f'attachment; filename="recon-report-{filename_target}-{scan_id}.json"'
-        },
-    )
-
-
-@app.get("/history/{scan_id}/report.md")
-def history_report_markdown(scan_id: str):
-    record = get_scan_record(scan_id)
-    if not record:
-        raise HTTPException(404, "Saved scan not found")
-
-    filename_target = re.sub(r"[^a-z0-9.-]+", "-", record["target"]).strip("-") or "target"
-    return Response(
-        content=build_markdown_report(record),
-        media_type="text/markdown",
-        headers={
-            "Content-Disposition": f'attachment; filename="recon-report-{filename_target}-{scan_id}.md"'
-        },
-    )
-
-
-@app.get("/history/{scan_id}/report.html")
-def history_report_html(scan_id: str):
-    record = get_scan_record(scan_id)
-    if not record:
-        raise HTTPException(404, "Saved scan not found")
-
-    filename_target = re.sub(r"[^a-z0-9.-]+", "-", record["target"]).strip("-") or "target"
-    return Response(
-        content=build_html_report(record),
-        media_type="text/html",
-        headers={
-            "Content-Disposition": f'attachment; filename="recon-report-{filename_target}-{scan_id}.html"'
-        },
-    )
-
-
-# Health / tool check endpoint
-
-@app.get("/health")
-def health():
-    tools = ["subfinder", "httpx", "nmap", "ffuf", "gau"]
-    return {
-        "status": "ok",
-        "version": "2.4.1",
-        "tools": {tool: tool_status(tool) for tool in tools},
-        "queue": {
-            "pending_jobs": sum(1 for item in scans.values() if item.get("status") in {"queued", "running"}),
-            "rate_limit_seconds": APP_SETTINGS["min_seconds_between_scans"],
-        },
-        "allowlist": APP_SETTINGS["allowed_domains"],
-    }
-
-
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("recon_api:app", host="0.0.0.0", port=8000)
+    uvicorn.run("reconsite.asgi:application", host="127.0.0.1", port=8000)

@@ -1,6 +1,6 @@
 # RECON//OS
 
-Bug bounty recon automation platform with a FastAPI backend, real tool integrations, live scan streaming, scan history, diffing, triage, and report exports.
+Bug bounty recon automation platform with a Django backend and SQLite3 database, real tool integrations, live scan streaming, scan history, diffing, triage, and report exports.
 
 ## Preview
 
@@ -24,7 +24,7 @@ Core capabilities:
 ## Stack
 
 - Frontend: HTML, CSS, JavaScript
-- Backend: FastAPI
+- Backend: Django
 - Streaming: Server-Sent Events
 - Persistence: SQLite
 - Tests: Python `unittest`
@@ -110,4 +110,4 @@ Only scan targets you own or have written permission to test. This project is me
 
 ## Suggested GitHub Repo Description
 
-FastAPI-powered bug bounty recon dashboard with real tool integrations, live scan streaming, history diffing, triage, and report exports.
+Django-powered bug bounty recon dashboard with real tool integrations, live scan streaming, history diffing, triage, and report exports.
