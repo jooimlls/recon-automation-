@@ -212,7 +212,6 @@ def dashboard_path() -> Path:
 
 
 HISTORY_DB_PATH = Path(__file__).with_name("db.sqlite3")
-HISTORY_DB_MEMORY_URI = "file:recon_history_runtime?mode=memory&cache=shared"
 
 
 
@@ -386,15 +385,16 @@ def _open_history_connection() -> sqlite3.Connection:
             conn.execute("PRAGMA journal_mode=OFF")
             conn.execute("PRAGMA synchronous=OFF")
             conn.execute("PRAGMA temp_store=MEMORY")
-            history_db_connection = conn
-            history_db_backend = "file"
-        except sqlite3.OperationalError:
-            conn = sqlite3.connect(HISTORY_DB_MEMORY_URI, uri=True, check_same_thread=False)
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA synchronous=OFF")
-            conn.execute("PRAGMA temp_store=MEMORY")
-            history_db_connection = conn
-            history_db_backend = "memory"
+        except sqlite3.Error as exc:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            raise RuntimeError(
+                f"Persistent history database unavailable at {HISTORY_DB_PATH}"
+            ) from exc
+        history_db_connection = conn
+        history_db_backend = "file"
 
     return history_db_connection
 
@@ -610,9 +610,9 @@ def build_saved_evidence(module: str, data: dict) -> dict:
     if module == "dns":
         return {
             "module": module,
-            "main": f"{data.get('kind', 'DNS')} {data.get('name', '?')} -> {data.get('value', '-')}",
+            "main": f"{data.get('kind', 'dns')} {data.get('name', '?')} -> {data.get('value', '-')}",
             "source": data.get("source", "unknown"),
-            "detail": data.get("evidence") or "DNS record discovered",
+            "detail": data.get("evidence") or "dns record discovered",
         }
     if module == "port":
         return {
@@ -624,9 +624,9 @@ def build_saved_evidence(module: str, data: dict) -> dict:
     if module == "fingerprint":
         return {
             "module": module,
-            "main": f"{data.get('kind', 'FINGERPRINT')} {data.get('name', '?')} -> {data.get('value', '-')}",
+            "main": f"{data.get('kind', 'fingerprint')} {data.get('name', '?')} -> {data.get('value', '-')}",
             "source": data.get("source", "unknown"),
-            "detail": data.get("evidence") or "Fingerprint signal collected",
+            "detail": data.get("evidence") or "fingerprint signal collected",
         }
     if module == "js":
         return {
@@ -638,7 +638,7 @@ def build_saved_evidence(module: str, data: dict) -> dict:
     if module == "url_intel":
         return {
             "module": module,
-            "main": f"{data.get('kind', 'URL')} {data.get('name', '?')}",
+            "main": f"{data.get('kind', 'url_intel')} {data.get('name', '?')}",
             "source": data.get("source", "unknown"),
             "detail": data.get("evidence") or data.get("value", ""),
         }
@@ -1140,7 +1140,7 @@ async def detect_wildcard_dns(target: str) -> Optional[list[str]]:
 
 
 async def run_dns_recon(target: str, profile: dict) -> AsyncGenerator[dict, None]:
-    yield {"module": "dns", "type": "log", "msg": f"Starting DNS recon for {target}"}
+    yield {"module": "dns", "type": "log", "msg": f"Starting dns for {target}"}
 
     record_targets = [
         ("A", target),
@@ -1259,7 +1259,7 @@ async def run_dns_recon(target: str, profile: dict) -> AsyncGenerator[dict, None
     yield {
         "module": "dns",
         "type": "done",
-        "msg": f"DNS recon complete - {len(results)} records and signals collected",
+        "msg": f"dns complete - {len(results)} records and signals collected",
         "level": "success",
         "count": len(results),
     }
@@ -1346,7 +1346,7 @@ def detect_waf_or_cdn(headers: dict[str, str]) -> list[str]:
 
 
 async def run_fingerprint_scan(target: str, subdomains: list, profile: dict) -> AsyncGenerator[dict, None]:
-    yield {"module": "fingerprint", "type": "log", "msg": f"Starting tech fingerprinting for {target}"}
+    yield {"module": "fingerprint", "type": "log", "msg": f"Starting fingerprint for {target}"}
     candidate_urls = [f"https://{target}", f"http://{target}"]
     for subdomain in subdomains[:2]:
         if subdomain.get("status") == "live":
@@ -1425,7 +1425,7 @@ async def run_fingerprint_scan(target: str, subdomains: list, profile: dict) -> 
     yield {
         "module": "fingerprint",
         "type": "done",
-        "msg": f"Fingerprinting complete - {len(results)} signals collected",
+        "msg": f"fingerprint complete - {len(results)} signals collected",
         "level": "success",
         "count": len(results),
     }
@@ -1483,7 +1483,7 @@ def classify_url_intel_item(url: str) -> list[dict]:
 
 
 async def run_url_intelligence(target: str, subdomains: list, profile: dict) -> AsyncGenerator[dict, None]:
-    yield {"module": "url_intel", "type": "log", "msg": f"Starting URL intelligence for {target}"}
+    yield {"module": "url_intel", "type": "log", "msg": f"Starting url_intel for {target}"}
 
     urls: set[str] = set()
     archived_urls: set[str] = set()
@@ -1552,7 +1552,7 @@ async def run_url_intelligence(target: str, subdomains: list, profile: dict) -> 
     yield {
         "module": "url_intel",
         "type": "done",
-        "msg": f"URL intelligence complete - {len(findings)} signals collected",
+        "msg": f"url_intel complete - {len(findings)} signals collected",
         "level": "success",
         "count": len(findings),
     }
@@ -2544,11 +2544,11 @@ def build_markdown_report(record: dict) -> str:
 
     for section_key, label in (
         ("subdomains", "Subdomains"),
-        ("dns_records", "DNS Records"),
+        ("dns_records", "dns"),
         ("ports", "Ports"),
-        ("fingerprints", "Fingerprints"),
+        ("fingerprints", "fingerprint"),
         ("js_findings", "JS Findings"),
-        ("url_intel", "URL Intelligence"),
+        ("url_intel", "url_intel"),
         ("directories", "Directories"),
     ):
         lines.extend(["", f"## {label}", ""])
@@ -2578,11 +2578,11 @@ def build_html_report(record: dict) -> str:
     sections = []
     for section_key, label in (
         ("subdomains", "Subdomains"),
-        ("dns_records", "DNS Records"),
+        ("dns_records", "dns"),
         ("ports", "Ports"),
-        ("fingerprints", "Fingerprints"),
+        ("fingerprints", "fingerprint"),
         ("js_findings", "JS Findings"),
-        ("url_intel", "URL Intelligence"),
+        ("url_intel", "url_intel"),
         ("directories", "Directories"),
     ):
         sections.append(f"<section><h2>{html.escape(label)}</h2>{render_list(results.get(section_key) or [])}</section>")

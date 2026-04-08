@@ -1342,6 +1342,27 @@
             </div>
             <div class="toggle on" data-module="dir" onclick="toggleModule(this)"></div>
           </div>
+          <div class="module-toggle">
+            <div class="module-toggle-label">
+              <span style="color:var(--green)">&#9672;</span>
+              <span>dns</span>
+            </div>
+            <div class="toggle on" data-module="dns" onclick="toggleModule(this)"></div>
+          </div>
+          <div class="module-toggle">
+            <div class="module-toggle-label">
+              <span style="color:var(--purple)">&#9672;</span>
+              <span>fingerprint</span>
+            </div>
+            <div class="toggle on" data-module="fingerprint" onclick="toggleModule(this)"></div>
+          </div>
+          <div class="module-toggle">
+            <div class="module-toggle-label">
+              <span style="color:var(--yellow)">&#9672;</span>
+              <span>url_intel</span>
+            </div>
+            <div class="toggle on" data-module="url_intel" onclick="toggleModule(this)"></div>
+          </div>
         </div>
         <button class="btn-launch" id="launch-btn" onclick="launchScan()">&#9654; LAUNCH RECON</button>
       </div>
@@ -1489,6 +1510,33 @@
                     <div class="module-status-pct" id="pct-dir">&mdash;</div>
                   </div>
                   <div class="progress-wrap"><div class="progress-bar accent4" id="bar-dir" style="width:0%"></div></div>
+
+                  <div class="module-status-row" style="margin-top:10px;">
+                    <div class="module-status-name">
+                      <div class="module-status-dot dot-waiting" id="dot-dns"></div>
+                      <span style="color:var(--green)">dns</span>
+                    </div>
+                    <div class="module-status-pct" id="pct-dns">&mdash;</div>
+                  </div>
+                  <div class="progress-wrap"><div class="progress-bar accent" id="bar-dns" style="width:0%"></div></div>
+
+                  <div class="module-status-row" style="margin-top:10px;">
+                    <div class="module-status-name">
+                      <div class="module-status-dot dot-waiting" id="dot-fingerprint"></div>
+                      <span style="color:var(--purple)">fingerprint</span>
+                    </div>
+                    <div class="module-status-pct" id="pct-fingerprint">&mdash;</div>
+                  </div>
+                  <div class="progress-wrap"><div class="progress-bar accent4" id="bar-fingerprint" style="width:0%"></div></div>
+
+                  <div class="module-status-row" style="margin-top:10px;">
+                    <div class="module-status-name">
+                      <div class="module-status-dot dot-waiting" id="dot-url_intel"></div>
+                      <span style="color:var(--yellow)">url_intel</span>
+                    </div>
+                    <div class="module-status-pct" id="pct-url_intel">&mdash;</div>
+                  </div>
+                  <div class="progress-wrap"><div class="progress-bar accent3" id="bar-url_intel" style="width:0%"></div></div>
                 </div>
               </div>
             </div>
@@ -1669,11 +1717,11 @@
               <select class="target-input mode-select" id="triage-module-filter">
                 <option value="all">ALL MODULES</option>
                 <option value="subdomain">SUBDOMAIN</option>
-                <option value="dns">DNS</option>
+                <option value="dns">dns</option>
                 <option value="port">PORT</option>
-                <option value="fingerprint">FINGERPRINT</option>
+                <option value="fingerprint">fingerprint</option>
                 <option value="js">JS</option>
-                <option value="url_intel">URL INTEL</option>
+                <option value="url_intel">url_intel</option>
                 <option value="dir">DIRECTORY</option>
               </select>
               <select class="target-input mode-select" id="triage-severity-filter">
@@ -2116,9 +2164,9 @@
           severity: data.kind === 'AXFR' ? 'critical' : data.kind === 'WILDCARD' ? 'medium' : ['SPF', 'DMARC', 'DKIM'].includes(data.kind) ? 'info' : 'low',
           status: state.triageStatuses[key] || 'new',
           title: `${data.kind} ${data.name}`,
-          meta: `${data.value || '-'} | ${data.source || 'dns recon'}`,
-          source: data.source || 'dns recon',
-          proof: `DNS Kind: ${data.kind}\nName: ${data.name}\nValue: ${data.value || '-'}\nSource: ${data.source || 'dns recon'}\nEvidence: ${data.evidence || 'DNS record discovered'}`,
+          meta: `${data.value || '-'} | ${data.source || 'dns'}`,
+          source: data.source || 'dns',
+          proof: `dns Kind: ${data.kind}\nName: ${data.name}\nValue: ${data.value || '-'}\nSource: ${data.source || 'dns'}\nEvidence: ${data.evidence || 'dns record discovered'}`,
         };
       }
 
@@ -2144,9 +2192,9 @@
           severity: data.kind === 'WAF_CDN' ? 'info' : data.kind === 'TLS' ? 'low' : 'info',
           status: state.triageStatuses[key] || 'new',
           title: `${data.kind} ${data.name}`,
-          meta: `${data.value || '-'} | ${data.source || 'fingerprint scan'}`,
-          source: data.source || 'fingerprint scan',
-          proof: `Fingerprint Kind: ${data.kind}\nName: ${data.name}\nValue: ${data.value || '-'}\nSource: ${data.source || 'fingerprint scan'}\nEvidence: ${data.evidence || 'Fingerprint signal collected'}`,
+          meta: `${data.value || '-'} | ${data.source || 'fingerprint'}`,
+          source: data.source || 'fingerprint',
+          proof: `fingerprint Kind: ${data.kind}\nName: ${data.name}\nValue: ${data.value || '-'}\nSource: ${data.source || 'fingerprint'}\nEvidence: ${data.evidence || 'fingerprint signal collected'}`,
         };
       }
 
@@ -2172,9 +2220,9 @@
           severity: data.kind === 'API_ROUTE' ? 'medium' : data.kind === 'INTERESTING_FILE' ? 'high' : data.kind === 'PARAM' ? 'low' : 'info',
           status: state.triageStatuses[key] || 'new',
           title: `${data.kind} ${data.name}`,
-          meta: `${data.value || '-'} | ${data.source || 'url intelligence'}`,
-          source: data.source || 'url intelligence',
-          proof: `URL Intel Kind: ${data.kind}\nName: ${data.name}\nValue: ${data.value || '-'}\nSource: ${data.source || 'url intelligence'}\nEvidence: ${data.evidence || 'URL intelligence signal collected'}`,
+          meta: `${data.value || '-'} | ${data.source || 'url_intel'}`,
+          source: data.source || 'url_intel',
+          proof: `url_intel Kind: ${data.kind}\nName: ${data.name}\nValue: ${data.value || '-'}\nSource: ${data.source || 'url_intel'}\nEvidence: ${data.evidence || 'url_intel signal collected'}`,
         };
       }
 
@@ -2340,7 +2388,7 @@
     }
 
     function historySummaryText(summary = {}) {
-      return `${summary.subdomains || 0} subs | ${summary.dns_records || 0} dns | ${summary.ports || 0} ports | ${summary.fingerprints || 0} fp | ${summary.js_findings || 0} js | ${summary.url_intel || 0} url | ${summary.dirs || 0} dirs`;
+      return `${summary.subdomains || 0} subs | ${summary.dns_records || 0} dns | ${summary.ports || 0} ports | ${summary.fingerprints || 0} fingerprint | ${summary.js_findings || 0} js | ${summary.url_intel || 0} url_intel | ${summary.dirs || 0} dirs`;
     }
 
     function formatHistoryTime(value) {
@@ -2528,25 +2576,25 @@
       const deltaLabels = {
         subdomains: 'SUBDOMAINS',
         live_subdomains: 'LIVE SUBS',
-        dns_records: 'DNS',
+        dns_records: 'dns',
         ports: 'PORTS',
         critical_ports: 'CRITICAL PORTS',
-        fingerprints: 'FINGERPRINTS',
+        fingerprints: 'fingerprint',
         js_findings: 'JS FINDINGS',
         high_js_findings: 'HIGH JS',
         js_scanned: 'JS SCANNED',
-        url_intel: 'URL INTEL',
+        url_intel: 'url_intel',
         exposed_keys: 'EXPOSED KEYS',
         dirs: 'DIRECTORIES',
         ok_dirs: '200 PATHS',
       };
       const moduleLabels = {
         subdomains: 'SUBDOMAINS',
-        dns_records: 'DNS',
+        dns_records: 'dns',
         ports: 'PORTS',
-        fingerprints: 'FINGERPRINTS',
+        fingerprints: 'fingerprint',
         js_findings: 'JS FINDINGS',
-        url_intel: 'URL INTEL',
+        url_intel: 'url_intel',
         directories: 'DIRECTORIES',
       };
       const totalChangeCount = Object.values(diff.modules || {}).reduce((sum, moduleData) => (
@@ -2639,7 +2687,7 @@
           module,
           main: `${data.kind} ${data.name} -> ${data.value}`,
           source: data.source || 'unknown',
-          detail: data.evidence || 'DNS record discovered',
+          detail: data.evidence || 'dns record discovered',
         };
       }
 
@@ -2657,7 +2705,7 @@
           module,
           main: `${data.kind} ${data.name} -> ${data.value}`,
           source: data.source || 'unknown',
-          detail: data.evidence || 'Fingerprint signal collected',
+          detail: data.evidence || 'fingerprint signal collected',
         };
       }
 
@@ -2675,7 +2723,7 @@
           module,
           main: `${data.kind} ${data.name}`,
           source: data.source || 'unknown',
-          detail: data.evidence || data.value || 'URL intelligence signal collected',
+          detail: data.evidence || data.value || 'url_intel signal collected',
         };
       }
 
@@ -3208,7 +3256,7 @@
         flushPendingRenders();
         state.currentScanId = event.scan_id || state.currentScanId;
         loadTriageState();
-        log('system', `Recon complete. Summary: ${event.summary.subdomains} subdomains, ${event.summary.dns_records || 0} DNS, ${event.summary.ports} ports, ${event.summary.fingerprints || 0} fingerprints, ${event.summary.js_findings} JS findings, ${event.summary.url_intel || 0} URL intel, ${event.summary.dirs} directories.`, 'success');
+        log('system', `Recon complete. Summary: ${event.summary.subdomains} subdomains, ${event.summary.dns_records || 0} dns, ${event.summary.ports} ports, ${event.summary.fingerprints || 0} fingerprint, ${event.summary.js_findings} JS findings, ${event.summary.url_intel || 0} url_intel, ${event.summary.dirs} directories.`, 'success');
         state.running = false;
         state.abortController = null;
         state.abortReason = null;

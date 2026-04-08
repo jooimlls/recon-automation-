@@ -51,6 +51,10 @@ class ReconApiHelperTests(unittest.TestCase):
             "ABCD...QRST",
         )
 
+    def test_history_backend_is_file_sqlite(self):
+        self.assertEqual(recon_api.history_db_backend, "file")
+        self.assertTrue(recon_api.HISTORY_DB_PATH.exists())
+
 
 class ReconApiFallbackTests(unittest.IsolatedAsyncioTestCase):
     async def test_run_subdomain_enum_uses_dns_fallback_when_tools_missing(self):
